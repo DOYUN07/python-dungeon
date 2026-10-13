@@ -1,0 +1,1174 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body { margin: 0; } [hidden] { display: none !important; }</style>
+<title>파이썬 던전</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=IBM+Plex+Sans+KR:wght@400;600;700&family=JetBrains+Mono:wght@400;700&display=swap">
+<style>
+/* Layout: one-screen dungeon — HUD strip, monster arena, question console. Deliberate single dark theme (torchlit dungeon). */
+:root {
+  --bg: #161827;
+  --panel: #20233a;
+  --panel-2: #2a2e4a;
+  --line: #3a3f63;
+  --ink: #ebe6d6;
+  --muted: #a3a2b8;
+  --torch: #f2a541;
+  --torch-dim: #8a5d24;
+  --good: #4cc38a;
+  --bad: #ec5b5b;
+  --code-bg: #0f111d;
+  --kw: #c792ea;
+  --str: #b5d47a;
+  --num: #f78c6c;
+  --fn: #7fc8f8;
+  --cm: #6b6f8f;
+  --display: "Silkscreen", "IBM Plex Sans KR", monospace;
+  --body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --mono: "JetBrains Mono", Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 780px; margin: 0 auto; padding-inline: 16px; padding-block: 16px 32px; display: flex; flex-direction: column; gap: 14px; }
+
+/* HUD */
+.hud { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 14px; background: var(--panel); border: 2px solid var(--line); font-variant-numeric: tabular-nums; }
+.hud .floor { font-family: var(--display); color: var(--torch); font-size: 15px; }
+.hud .hearts { color: var(--bad); font-size: 20px; letter-spacing: 2px; }
+.hud .hearts .lost { color: var(--line); }
+.hud .stat { font-size: 13px; color: var(--muted); }
+.hud .stat b { color: var(--ink); font-family: var(--mono); font-size: 15px; }
+.hud .spacer { flex: 1; }
+.hud .quit { background: none; border: 1px solid var(--line); color: var(--muted); font-size: 12px; padding: 3px 8px; }
+.hud .quit:hover { color: var(--ink); border-color: var(--muted); }
+.combo { font-family: var(--display); color: var(--torch); font-size: 13px; }
+.combo[data-on="0"] { color: var(--line); }
+
+/* Arena */
+.arena { position: relative; display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; padding: 16px; background:
+  radial-gradient(circle at 18% 50%, rgba(242,165,65,.14), transparent 55%), var(--panel); border: 2px solid var(--line); }
+.arena canvas { width: 120px; height: 120px; image-rendering: pixelated; display: block; }
+.arena .mon-name { font-family: var(--display); font-size: 15px; margin: 0 0 6px; text-wrap: balance; }
+.arena .mon-name small { display: block; font-family: var(--body); font-size: 12px; color: var(--muted); letter-spacing: .04em; }
+.hpbar { height: 14px; background: var(--code-bg); border: 2px solid var(--line); position: relative; }
+.hpbar i { position: absolute; inset: 0 auto 0 0; background: var(--bad); transition: width .35s steps(6); }
+.hptext { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 4px; }
+.shake { animation: shake .35s; }
+.hit { animation: hit .4s; }
+@keyframes shake { 20%,60% { transform: translateX(-6px) } 40%,80% { transform: translateX(6px) } }
+@keyframes hit { 0% { filter: none } 30% { filter: brightness(3) } 50% { transform: translateX(8px) } 100% { filter: none; transform: none } }
+.dmg { position: absolute; left: 70px; top: 20px; font-family: var(--display); font-size: 22px; color: var(--torch); pointer-events: none; animation: float 0.9s forwards; }
+@keyframes float { to { transform: translateY(-34px); opacity: 0 } }
+
+/* Console */
+.console { background: var(--panel); border: 2px solid var(--line); padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.qbody { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.qhead { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.tag { font-family: var(--display); font-size: 11px; letter-spacing: .08em; padding: 3px 8px; background: var(--panel-2); color: var(--torch); border: 1px solid var(--torch-dim); }
+.tag.lv { color: var(--muted); border-color: var(--line); }
+.timer { flex: 1; min-width: 120px; max-width: 260px; height: 8px; background: var(--code-bg); border: 1px solid var(--line); position: relative; }
+.timer i { position: absolute; inset: 0 auto 0 0; background: var(--torch); }
+.timer.low i { background: var(--bad); }
+.notimer { font-size: 12px; color: var(--muted); }
+.q { font-size: 16px; font-weight: 600; margin: 0; }
+.qsub { margin: 0; color: var(--muted); font-size: 14px; }
+pre.code { margin: 0; background: var(--code-bg); border: 1px solid var(--line); padding: 12px 14px; font-family: var(--mono); font-size: 14px; line-height: 1.6; overflow-x: auto; color: var(--ink); }
+pre.code.small { font-size: 13px; }
+.k { color: var(--kw); } .s { color: var(--str); } .n { color: var(--num); } .f { color: var(--fn); } .c { color: var(--cm); font-style: italic; }
+.blank { color: var(--bg); background: var(--torch); padding: 0 4px; }
+.opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 520px) { .opts { grid-template-columns: 1fr; } .arena canvas { width: 88px; height: 88px; } }
+button { font: inherit; color: inherit; cursor: pointer; }
+.opt { text-align: left; background: var(--panel-2); border: 2px solid var(--line); padding: 10px 12px; font-family: var(--mono); font-size: 14px; display: flex; gap: 10px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
+.opt kbd { font-family: var(--display); font-size: 11px; color: var(--muted); }
+.opt:hover:not(:disabled) { border-color: var(--torch); }
+:focus-visible { outline: 2px solid var(--torch); outline-offset: 2px; }
+.opt.right { border-color: var(--good); background: rgba(76,195,138,.12); }
+.opt.wrong { border-color: var(--bad); background: rgba(236,91,91,.12); }
+.opt:disabled { cursor: default; }
+.btn { background: var(--torch); color: var(--bg); border: 0; padding: 10px 18px; font-family: var(--display); font-size: 13px; box-shadow: 0 4px 0 var(--torch-dim); }
+.btn:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--torch-dim); }
+.btn.ghost { background: var(--panel-2); color: var(--ink); box-shadow: 0 4px 0 var(--line); }
+.btn.small { padding: 6px 12px; font-size: 11px; }
+.btn:disabled { opacity: .4; cursor: default; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+input[type="text"] { flex: 1; min-width: 0; background: var(--code-bg); border: 2px solid var(--line); color: var(--ink); font-family: var(--mono); font-size: 15px; padding: 9px 12px; }
+textarea.editor { width: 100%; min-height: 220px; resize: vertical; background: var(--code-bg); border: 2px solid var(--line); color: var(--ink); font-family: var(--mono); font-size: 14px; line-height: 1.6; padding: 12px 14px; tab-size: 4; white-space: pre; overflow: auto; }
+textarea.editor:focus { border-color: var(--torch-dim); outline: none; }
+
+.feedback { border: 2px solid var(--line); padding: 12px 14px; background: var(--panel-2); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.feedback.ok { border-color: var(--good); }
+.feedback.no { border-color: var(--bad); }
+.feedback h3 { margin: 0; font-family: var(--display); font-size: 15px; }
+.feedback.ok h3 { color: var(--good); } .feedback.no h3 { color: var(--bad); }
+.feedback p { margin: 0; color: var(--ink); }
+.feedback code, .qsub code, .log code { font-family: var(--mono); background: var(--code-bg); padding: 1px 5px; }
+.feedback .lbl { font-size: 12px; color: var(--muted); }
+
+/* Test results */
+.results { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tres { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; padding: 8px 10px; background: var(--code-bg); border: 1px solid var(--line); font-family: var(--mono); font-size: 13px; min-width: 0; }
+.tres .mark { font-weight: 700; }
+.tres.pass .mark { color: var(--good); } .tres.fail .mark { color: var(--bad); }
+.tres .expr { overflow-wrap: anywhere; }
+.tres .detail { grid-column: 2; color: var(--muted); overflow-wrap: anywhere; }
+.tres .detail b { color: var(--ink); font-weight: 400; }
+.status { font-size: 13px; color: var(--muted); }
+.status.err { color: var(--bad); }
+
+/* Puzzles shared */
+.target { font-family: var(--mono); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.target span.lbl { font-family: var(--body); font-size: 13px; color: var(--muted); margin-right: 4px; }
+.cell { min-width: 38px; height: 34px; padding: 0 4px; display: inline-grid; place-items: center; font-family: var(--mono); font-weight: 700; border: 2px solid var(--line); background: var(--code-bg); }
+.cell.done { border-color: var(--good); color: var(--good); }
+.cell.next { border-color: var(--torch); }
+.cell.ghost { border-style: dashed; color: transparent; }
+.board { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.zone { background: var(--code-bg); border: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 6px; min-height: 210px; min-width: 0; }
+.zone h4 { margin: 0 0 4px; font-family: var(--display); font-size: 11px; color: var(--muted); letter-spacing: .06em; }
+.zone .items { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+.zone.stack .items { flex: 1; justify-content: flex-end; border: 2px solid var(--line); border-top: 0; padding: 6px 4px; }
+.zone .hint { font-size: 11px; color: var(--muted); text-align: center; }
+.svgbox { background: var(--code-bg); border: 1px solid var(--line); overflow-x: auto; }
+.svgbox svg { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+.gedge { stroke: var(--line); stroke-width: 2.5; }
+.gnode { cursor: pointer; }
+.gnode circle { fill: var(--panel-2); stroke: var(--muted); stroke-width: 2; }
+.gnode:hover circle, .gnode:focus-visible circle { stroke: var(--torch); }
+.gnode:focus { outline: none; }
+.gnode.start circle { stroke: var(--torch); stroke-width: 3; }
+.gnode.done circle { fill: #1f3a30; stroke: var(--good); }
+.gnode text { fill: var(--ink); font-family: var(--mono); font-weight: 700; font-size: 15px; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.gnode .ord { fill: var(--good); font-size: 11px; }
+.log { font-family: var(--mono); font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
+.log b { color: var(--ink); font-weight: 400; }
+.bs { display: flex; flex-wrap: wrap; gap: 4px; }
+.bs button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px 4px; min-width: 40px; background: var(--code-bg); border: 2px solid var(--line); font-family: var(--mono); }
+.bs button b { font-size: 15px; }
+.bs button small { font-size: 10px; color: var(--muted); }
+.bs button em { font-style: normal; font-size: 10px; color: var(--torch); height: 12px; line-height: 12px; }
+.bs button:hover:not(:disabled) { border-color: var(--torch); }
+.bs button.out { opacity: .28; }
+.bs button.probe { border-color: var(--muted); }
+.bs button.found { border-color: var(--good); color: var(--good); }
+
+/* Screens */
+.screen { background: var(--panel); border: 2px solid var(--line); padding: 24px 20px; display: flex; flex-direction: column; gap: 18px; }
+.screen h1 { margin: 0; font-family: var(--display); font-size: clamp(28px, 7vw, 44px); line-height: 1.1; color: var(--torch); text-wrap: balance; }
+.screen h1 small { display: block; font-family: var(--body); font-size: 15px; color: var(--muted); font-weight: 400; margin-top: 8px; }
+.screen h2 { margin: 0; font-family: var(--display); font-size: 13px; letter-spacing: .08em; color: var(--muted); }
+.screen p { margin: 0; max-width: 62ch; }
+.section { display: flex; flex-direction: column; gap: 10px; }
+.seg { display: inline-flex; border: 2px solid var(--line); width: fit-content; max-width: 100%; flex-wrap: wrap; }
+.seg label { cursor: pointer; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg span { display: block; padding: 8px 16px; font-size: 14px; color: var(--muted); }
+.seg input:checked + span { background: var(--torch); color: var(--bg); font-weight: 700; }
+.seg input:focus-visible + span { outline: 2px solid var(--torch); outline-offset: -4px; }
+.diffnote { font-size: 13px; color: var(--muted); }
+.tabs { display: flex; gap: 0; border-bottom: 2px solid var(--line); }
+.tabs button { background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -2px; padding: 8px 14px; font-family: var(--display); font-size: 13px; color: var(--muted); }
+.tabs button[aria-selected="true"] { color: var(--torch); border-bottom-color: var(--torch); }
+.stages { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.stage { text-align: left; background: var(--panel-2); border: 2px solid var(--line); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.stage:hover { border-color: var(--torch); }
+.stage .nm { font-weight: 700; font-size: 15px; }
+.stage .tp { font-family: var(--display); font-size: 10px; letter-spacing: .08em; color: var(--torch); }
+.stage .ds { font-size: 12px; color: var(--muted); }
+.stage .stars { font-size: 15px; letter-spacing: 2px; color: var(--torch); }
+.stage .stars .off { color: var(--line); }
+.topics { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.topics label, .check { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; background: var(--panel-2); border: 2px solid var(--line); cursor: pointer; }
+.topics label:has(input:checked) { border-color: var(--torch); }
+.topics input, .check input { accent-color: var(--torch); margin-top: 4px; }
+.topics b { display: block; font-size: 14px; }
+.topics span, .check span { font-size: 12px; color: var(--muted); }
+.check { background: none; border: 0; padding: 0; }
+.rules { display: grid; gap: 4px; font-size: 13px; color: var(--muted); padding: 0; margin: 0; list-style: none; }
+.rules li::before { content: "▸ "; color: var(--torch); }
+.big { font-family: var(--display); font-size: 34px; color: var(--torch); font-variant-numeric: tabular-nums; }
+.bigstars { font-size: 40px; letter-spacing: 6px; color: var(--torch); }
+.bigstars .off { color: var(--line); }
+.stats { display: flex; gap: 24px; flex-wrap: wrap; }
+.stats div { font-size: 12px; color: var(--muted); }
+.stats b { display: block; font-family: var(--mono); font-size: 20px; color: var(--ink); }
+.muted { color: var(--muted); font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .shake, .hit, .dmg { animation: none !important; } .hpbar i { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+
+<script>
+// =====================================================================
+// Question bank. g = 주제(스테이지), lv = 난이도 1~3, 정답은 opts[0].
+// =====================================================================
+const BANK = {
+  out: [
+    { g: "basic", lv: 1, code: `a = [1, 2, 3]\nb = a\nb.append(4)\nprint(a)`, opts: ["[1, 2, 3, 4]", "[1, 2, 3]", "[4]", "오류"], ex: "<code>b = a</code>는 복사가 아니라 같은 리스트에 이름을 하나 더 붙이는 것입니다. 복사가 필요하면 <code>a[:]</code> 또는 <code>a.copy()</code>." },
+    { g: "basic", lv: 1, code: `print([1, 2, 3, 4, 5][1:4])`, opts: ["[2, 3, 4]", "[1, 2, 3, 4]", "[2, 3, 4, 5]", "[1, 2, 3]"], ex: "슬라이싱 <code>[start:end]</code>는 start 포함, end 미포함입니다. 인덱스 1, 2, 3." },
+    { g: "basic", lv: 3, code: `def f(x, items=[]):\n    items.append(x)\n    return items\n\nf(1)\nprint(f(2))`, opts: ["[1, 2]", "[2]", "[1]", "None"], ex: "기본값 <code>[]</code>는 함수 정의 시점에 한 번만 만들어져 호출 사이에 공유됩니다. 보통 <code>items=None</code>으로 받고 안에서 새 리스트를 만듭니다." },
+    { g: "basic", lv: 1, code: `print("python"[::-1])`, opts: ["nohtyp", "python", "p", "오류"], ex: "step이 -1이면 뒤에서부터 거꾸로 읽습니다." },
+    { g: "basic", lv: 1, code: `print(7 // 2, 7 % 2)`, opts: ["3 1", "3.5 1", "3 0.5", "4 1"], ex: "<code>//</code>는 몫(정수 나눗셈), <code>%</code>는 나머지." },
+    { g: "basic", lv: 1, code: `print([i * i for i in range(4)])`, opts: ["[0, 1, 4, 9]", "[1, 4, 9, 16]", "[0, 1, 4, 9, 16]", "[0, 2, 4, 6]"], ex: "<code>range(4)</code>는 0, 1, 2, 3." },
+    { g: "basic", lv: 2, code: `print(bool([]), bool([0]))`, opts: ["False True", "False False", "True True", "True False"], ex: "빈 컬렉션은 False, 원소가 하나라도 있으면 True. 원소가 0이어도 리스트 자체는 비어 있지 않습니다." },
+    { g: "basic", lv: 3, code: `a = [[0] * 2] * 2\na[0][0] = 1\nprint(a)`, opts: ["[[1, 0], [1, 0]]", "[[1, 0], [0, 0]]", "[[1, 1], [0, 0]]", "오류"], ex: "바깥 <code>* 2</code>는 같은 내부 리스트를 두 번 참조합니다. 2차원 배열은 <code>[[0]*2 for _ in range(2)]</code>로 만드세요." },
+    { g: "basic", lv: 2, code: `print(0.1 + 0.2 == 0.3)`, opts: ["False", "True", "오류", "0.3"], ex: "부동소수점 오차로 0.1 + 0.2는 0.30000000000000004. 비교는 <code>math.isclose</code>로." },
+    { g: "basic", lv: 2, code: `t = (1,)\nprint(type(t).__name__)`, opts: ["tuple", "int", "list", "set"], ex: "원소 하나짜리 튜플은 쉼표가 필요합니다. <code>(1)</code>은 그냥 int." },
+    { g: "basic", lv: 2, code: `x = [1, 2, 3]\ny = x + [4]\nx.append(5)\nprint(y)`, opts: ["[1, 2, 3, 4]", "[1, 2, 3, 5, 4]", "[1, 2, 3, 4, 5]", "[1, 2, 3]"], ex: "<code>+</code>는 새 리스트를 만듭니다. 이후 x를 바꿔도 y는 영향이 없습니다." },
+    { g: "hash", lv: 1, code: `print(len({1, 2, 2, 3, 3, 3}))`, opts: ["3", "6", "4", "1"], ex: "set은 중복을 제거합니다. 남는 원소는 1, 2, 3." },
+    { g: "hash", lv: 1, code: `d = {"a": 1}\nprint(d.get("b", 0))`, opts: ["0", "None", "KeyError", "1"], ex: "<code>dict.get(key, default)</code>는 키가 없으면 default를 돌려줍니다. <code>d[\"b\"]</code>였다면 KeyError." },
+    { g: "hash", lv: 1, code: `cnt = {}\nfor ch in "banana":\n    cnt[ch] = cnt.get(ch, 0) + 1\nprint(cnt["a"])`, opts: ["3", "2", "1", "6"], ex: "dict로 빈도 세기. 'a'는 세 번 나옵니다. <code>collections.Counter</code>로도 가능." },
+    { g: "hash", lv: 1, code: `d = {"a": 1, "b": 2}\nd["a"] = 3\nprint(len(d), d["a"])`, opts: ["2 3", "3 3", "2 1", "3 1"], ex: "이미 있는 키에 대입하면 값이 덮어써질 뿐 키가 늘지 않습니다." },
+    { g: "hash", lv: 2, code: `print({1, 2, 3} & {2, 3, 4})`, opts: ["{2, 3}", "{1, 2, 3, 4}", "{1, 4}", "[2, 3]"], ex: "<code>&</code>는 교집합, <code>|</code>는 합집합, <code>-</code>는 차집합." },
+    { g: "hash", lv: 2, code: `from collections import Counter\nprint(Counter("hello").most_common(1))`, opts: ["[('l', 2)]", "[('h', 1)]", "('l', 2)", "{'l': 2}"], ex: "<code>most_common(k)</code>는 (원소, 개수) 튜플의 리스트를 빈도순으로 돌려줍니다." },
+    { g: "hash", lv: 3, code: `d = {}\ntry:\n    d[[1, 2]] = "x"\n    print("ok")\nexcept TypeError:\n    print("TypeError")`, opts: ["TypeError", "ok", "KeyError", "None"], ex: "리스트는 변경 가능(mutable)해서 해시할 수 없으므로 dict 키가 될 수 없습니다. 튜플 <code>(1, 2)</code>는 가능." },
+    { g: "linear", lv: 2, code: `from collections import deque\nq = deque([1, 2, 3])\nq.appendleft(0)\nq.pop()\nprint(list(q))`, opts: ["[0, 1, 2]", "[1, 2, 3]", "[0, 1, 2, 3]", "[1, 2]"], ex: "appendleft(0)로 [0, 1, 2, 3], pop()은 오른쪽 끝을 꺼내서 [0, 1, 2]." },
+    { g: "linear", lv: 1, code: `stack = []\nfor x in [1, 2, 3]:\n    stack.append(x)\nstack.pop()\nstack.append(4)\nprint(stack)`, opts: ["[1, 2, 4]", "[2, 3, 4]", "[1, 2, 3, 4]", "[4, 1, 2]"], ex: "스택은 LIFO. pop()은 마지막에 넣은 3을 꺼냅니다." },
+    { g: "linear", lv: 1, code: `from collections import deque\nq = deque()\nfor x in [1, 2, 3]:\n    q.append(x)\nq.popleft()\nq.append(4)\nprint(q[0])`, opts: ["2", "1", "4", "3"], ex: "큐는 FIFO. popleft()가 먼저 들어온 1을 꺼내서 맨 앞은 2." },
+    { g: "linear", lv: 2, code: `st = []\nfor c in "(()":\n    if c == "(":\n        st.append(c)\n    else:\n        st.pop()\nprint(len(st))`, opts: ["1", "0", "2", "3"], ex: "여는 괄호 2개를 넣고 닫는 괄호 1개로 하나를 뺐으니 1개가 남습니다. 남은 게 있으면 짝이 맞지 않은 것." },
+    { g: "rec", lv: 2, code: `def fib(n):\n    return n if n < 2 else fib(n - 1) + fib(n - 2)\n\nprint(fib(6))`, opts: ["8", "13", "5", "6"], ex: "0, 1, 1, 2, 3, 5, 8 — fib(6)은 8." },
+    { g: "rec", lv: 1, code: `def f(n):\n    if n == 0:\n        return 0\n    return n + f(n - 1)\n\nprint(f(4))`, opts: ["10", "4", "24", "0"], ex: "4 + 3 + 2 + 1 + 0 = 10." },
+    { g: "rec", lv: 2, code: `def p(n):\n    if n > 0:\n        p(n - 1)\n        print(n, end=" ")\n\np(3)`, opts: ["1 2 3", "3 2 1", "0 1 2 3", "3 2 1 0"], ex: "print가 재귀 호출 뒤에 있어서, 가장 깊은 호출(1)부터 돌아오며 출력합니다." },
+    { g: "rec", lv: 2, code: `def h(s):\n    if len(s) <= 1:\n        return s\n    return h(s[1:]) + s[0]\n\nprint(h("abc"))`, opts: ["cba", "abc", "bca", "cab"], ex: "나머지를 먼저 뒤집고 첫 글자를 맨 뒤에 붙입니다: h('bc') + 'a' = 'cb' + 'a'." },
+    { g: "rec", lv: 3, code: `def g(n):\n    if n <= 1:\n        return 1\n    return g(n - 1) + g(n - 1)\n\nprint(g(4))`, opts: ["8", "16", "4", "7"], ex: "g(1)=1, g(2)=2, g(3)=4, g(4)=8. 호출이 매번 두 갈래로 늘어나 O(2ⁿ)입니다." },
+    { g: "search", lv: 2, code: `s = [3, 1, 2]\nprint(s.sort())`, opts: ["None", "[1, 2, 3]", "[3, 1, 2]", "오류"], ex: "<code>list.sort()</code>는 제자리 정렬하고 None을 반환합니다. 새 리스트가 필요하면 <code>sorted(s)</code>." },
+    { g: "search", lv: 1, code: `print(sorted("bca"))`, opts: ["['a', 'b', 'c']", "abc", "'abc'", "['bca']"], ex: "<code>sorted()</code>는 항상 리스트를 반환합니다. 문자열은 문자 단위로 순회됩니다." },
+    { g: "search", lv: 1, code: `print(sorted(["ccc", "a", "bb"], key=len))`, opts: ["['a', 'bb', 'ccc']", "['ccc', 'bb', 'a']", "['a', 'ccc', 'bb']", "[1, 2, 3]"], ex: "<code>key=len</code>이면 길이를 기준으로 정렬합니다." },
+    { g: "search", lv: 1, code: `print(sorted([3, 1, 2], reverse=True))`, opts: ["[3, 2, 1]", "[1, 2, 3]", "[2, 1, 3]", "None"], ex: "<code>reverse=True</code>는 내림차순." },
+    { g: "search", lv: 2, code: `print(max(["apple", "fig", "banana"], key=len))`, opts: ["banana", "apple", "fig", "6"], ex: "key 함수의 결과(길이)가 가장 큰 원소 자체를 돌려줍니다." },
+    { g: "search", lv: 2, code: `import bisect\nprint(bisect.bisect_left([1, 3, 5, 7], 5))`, opts: ["2", "3", "5", "1"], ex: "bisect_left는 5를 넣을 수 있는 가장 왼쪽 위치, 즉 인덱스 2를 돌려줍니다." },
+    { g: "tree", lv: 2, code: `import heapq\nh = [5, 1, 4]\nheapq.heapify(h)\nheapq.heappush(h, 2)\nprint(heapq.heappop(h), heapq.heappop(h))`, opts: ["1 2", "5 4", "1 4", "2 1"], ex: "heapq는 최소 힙입니다. 항상 가장 작은 값부터 나옵니다." },
+    { g: "tree", lv: 2, code: `import heapq\nh = []\nfor x in [3, 1, 2]:\n    heapq.heappush(h, -x)\nprint(-h[0])`, opts: ["3", "1", "-3", "2"], ex: "값에 -를 붙여 넣으면 최소 힙을 최대 힙처럼 쓸 수 있습니다. h[0]은 -3." },
+    { g: "tree", lv: 2, code: `tree = {"A": ["B", "C"], "B": ["D"], "C": [], "D": []}\n\ndef dfs(n):\n    print(n, end="")\n    for c in tree[n]:\n        dfs(c)\n\ndfs("A")`, opts: ["ABDC", "ABCD", "DBCA", "ACBD"], ex: "DFS는 한 갈래를 끝까지 내려간 뒤 돌아옵니다: A → B → D, 그다음 C." },
+  ],
+  big: [
+    { g: "search", lv: 1, code: `x in my_list`, q: "리스트에서 값 찾기의 시간복잡도는?", opts: ["O(n)", "O(1)", "O(log n)", "O(n²)"], ex: "리스트는 처음부터 하나씩 비교합니다." },
+    { g: "hash", lv: 1, code: `x in my_set`, q: "set에서 값 찾기의 평균 시간복잡도는?", opts: ["O(1)", "O(n)", "O(log n)", "O(n log n)"], ex: "set과 dict는 해시 테이블이라 평균 O(1)." },
+    { g: "linear", lv: 2, code: `my_list.pop(0)`, q: "리스트 맨 앞 원소 꺼내기의 시간복잡도는?", opts: ["O(n)", "O(1)", "O(log n)", "O(n²)"], ex: "뒤의 원소를 전부 한 칸씩 당겨야 해서 O(n). 큐가 필요하면 deque를 쓰세요." },
+    { g: "linear", lv: 1, code: `q.popleft()  # q는 deque`, q: "deque 맨 앞 원소 꺼내기의 시간복잡도는?", opts: ["O(1)", "O(n)", "O(log n)", "O(n log n)"], ex: "deque는 양쪽 끝 삽입·삭제가 O(1)." },
+    { g: "tree", lv: 2, code: `heapq.heappush(h, x)`, q: "힙에 원소 넣기의 시간복잡도는?", opts: ["O(log n)", "O(1)", "O(n)", "O(n log n)"], ex: "트리 높이만큼 위로 올라가며 자리를 찾습니다." },
+    { g: "search", lv: 1, code: `bisect.bisect_left(sorted_arr, x)`, q: "정렬된 배열에서 이진 탐색의 시간복잡도는?", opts: ["O(log n)", "O(n)", "O(1)", "O(n log n)"], ex: "매번 탐색 범위가 절반으로 줄어듭니다." },
+    { g: "basic", lv: 1, code: `for i in range(n):\n    for j in range(n):\n        check(i, j)`, q: "이 코드의 시간복잡도는?", opts: ["O(n²)", "O(n)", "O(2n)", "O(n log n)"], ex: "n번 반복 안에 n번 반복이 있으니 n × n." },
+    { g: "search", lv: 1, code: `sorted(arr)`, q: "파이썬 sorted()의 시간복잡도는?", opts: ["O(n log n)", "O(n)", "O(n²)", "O(log n)"], ex: "Timsort를 쓰고, 최악에도 O(n log n)." },
+    { g: "hash", lv: 1, code: `d[key]  # d는 dict`, q: "딕셔너리 키 조회의 평균 시간복잡도는?", opts: ["O(1)", "O(n)", "O(log n)", "O(key)"], ex: "해시로 바로 위치를 계산합니다." },
+    { g: "linear", lv: 2, code: `my_list.append(x)`, q: "리스트 끝에 추가하기의 (분할상환) 시간복잡도는?", opts: ["O(1)", "O(n)", "O(log n)", "O(n²)"], ex: "가끔 크기를 늘리며 복사하지만, 평균하면 한 번에 O(1)." },
+    { g: "search", lv: 2, code: `i = n\nwhile i > 1:\n    i //= 2`, q: "이 반복문의 시간복잡도는?", opts: ["O(log n)", "O(n)", "O(√n)", "O(1)"], ex: "i가 매번 절반이 되므로 log₂ n번 반복." },
+    { g: "rec", lv: 2, code: `def fib(n):\n    if n < 2:\n        return n\n    return fib(n - 1) + fib(n - 2)`, q: "메모이제이션 없는 피보나치의 시간복잡도는?", opts: ["O(2ⁿ)", "O(n)", "O(n²)", "O(log n)"], ex: "호출마다 두 갈래로 갈라져 호출 수가 지수적으로 늘어납니다." },
+    { g: "rec", lv: 3, code: `@lru_cache(maxsize=None)\ndef fib(n):\n    if n < 2:\n        return n\n    return fib(n - 1) + fib(n - 2)`, q: "메모이제이션한 피보나치의 시간복잡도는?", opts: ["O(n)", "O(2ⁿ)", "O(n²)", "O(1)"], ex: "각 n은 한 번만 계산되고 나머지는 캐시에서 꺼냅니다." },
+    { g: "rec", lv: 2, code: `def f(n):\n    if n <= 1:\n        return\n    f(n // 2)`, q: "이 재귀 함수의 시간복잡도는?", opts: ["O(log n)", "O(n)", "O(2ⁿ)", "O(n log n)"], ex: "호출마다 n이 절반이 되므로 깊이는 log n." },
+    { g: "tree", lv: 3, code: `# 정점 V개, 간선 E개인 그래프\nbfs(graph, start)`, q: "인접 리스트로 표현한 그래프 BFS의 시간복잡도는?", opts: ["O(V + E)", "O(V²)", "O(E log V)", "O(V)"], ex: "모든 정점을 한 번씩 꺼내고, 모든 간선을 한 번씩(무방향이면 두 번) 확인합니다." },
+    { g: "tree", lv: 2, code: `# 균형 잡힌 이진 탐색 트리\nbst.search(x)`, q: "균형 이진 탐색 트리에서 검색의 시간복잡도는?", opts: ["O(log n)", "O(n)", "O(1)", "O(n log n)"], ex: "높이가 log n이고, 한 층에 한 번씩만 비교합니다. 균형이 깨지면 최악 O(n)." },
+    { g: "hash", lv: 1, code: `d = {x: i for i, x in enumerate(arr)}`, q: "길이 n인 arr로 dict 만들기의 시간복잡도는?", opts: ["O(n)", "O(1)", "O(n²)", "O(n log n)"], ex: "원소마다 O(1) 삽입을 n번." },
+    { g: "hash", lv: 3, code: `# 모든 키의 해시값이 같다면?\nd[key]`, q: "해시 충돌이 극단적일 때 dict 조회의 최악 시간복잡도는?", opts: ["O(n)", "O(1)", "O(log n)", "O(n²)"], ex: "모든 키가 같은 자리로 몰리면 하나씩 비교해야 합니다. 평균 O(1)은 해시가 잘 퍼질 때의 이야기." },
+  ],
+  blank: [
+    { g: "linear", lv: 1, code: `stack = [1, 2, 3]\ntop = stack.___()   # 3을 꺼낸다`, q: "스택 맨 위를 꺼내는 메서드는?", ans: ["pop"], ex: "<code>list.pop()</code>은 마지막 원소를 꺼냅니다." },
+    { g: "linear", lv: 1, code: `from collections import deque\nq = deque([1, 2, 3])\nfirst = q.___()   # 1을 꺼낸다`, q: "큐 맨 앞을 O(1)로 꺼내는 메서드는?", ans: ["popleft"], ex: "<code>deque.popleft()</code>." },
+    { g: "linear", lv: 2, code: `node = head\nwhile node:\n    print(node.val)\n    node = node.___`, q: "연결 리스트에서 다음 노드로 이동하는 속성은?", ans: ["next"], ex: "연결 리스트는 각 노드가 다음 노드를 가리킵니다." },
+    { g: "hash", lv: 1, code: `for k, v in d.___():\n    print(k, v)`, q: "딕셔너리의 키와 값을 함께 순회하려면?", ans: ["items"], ex: "<code>d.items()</code>는 (키, 값) 쌍을 줍니다." },
+    { g: "hash", lv: 1, code: `seen = set()\nseen.___(5)`, q: "set에 원소를 추가하는 메서드는?", ans: ["add"], ex: "set은 <code>add</code>, list는 <code>append</code>." },
+    { g: "hash", lv: 2, code: `from collections import ___\nc = Counter(words)`, q: "빈도 세기 전용 클래스를 가져오려면?", ans: ["Counter"], ex: "<code>from collections import Counter</code>." },
+    { g: "basic", lv: 1, code: `s = "hello"\nr = s[___]   # "olleh"`, q: "문자열을 뒤집는 슬라이스는?", ans: ["::-1"], ex: "<code>s[::-1]</code>." },
+    { g: "basic", lv: 1, code: `squares = [x * x ___ x in range(5)]`, q: "리스트 컴프리헨션에 들어갈 키워드는?", ans: ["for"], ex: "<code>[식 for 변수 in 반복가능]</code>." },
+    { g: "tree", lv: 2, code: `import heapq\nsmallest = heapq.___(h)`, q: "최소 힙에서 가장 작은 값을 꺼내는 함수는?", ans: ["heappop"], ex: "<code>heapq.heappop(h)</code>." },
+    { g: "tree", lv: 2, code: `graph = {1: [2, 3], 2: [4]}\nfor nxt in graph.___(1, []):\n    visit(nxt)`, q: "키가 없을 때 기본값을 주는 dict 메서드는?", ans: ["get"], ex: "<code>graph.get(1, [])</code> — 이웃이 없는 노드도 안전하게 처리." },
+    { g: "tree", lv: 1, code: `def inorder(node):\n    if not node:\n        return\n    inorder(node.___)\n    visit(node)\n    inorder(node.right)`, q: "중위 순회에서 먼저 방문할 자식은?", ans: ["left"], ex: "중위 순회: 왼쪽 → 루트 → 오른쪽." },
+    { g: "tree", lv: 2, code: `visited = {start}\nq = deque([start])\nwhile q:\n    cur = q.___()\n    for nxt in graph[cur]:\n        ...`, q: "BFS에서 큐의 앞을 꺼내는 메서드는?", ans: ["popleft"], ex: "BFS는 큐(FIFO)로 가까운 정점부터 방문합니다." },
+    { g: "search", lv: 1, code: `lo, hi = 0, len(arr) - 1\nwhile lo <= hi:\n    mid = (lo + hi) ___ 2`, q: "이진 탐색에서 중간 인덱스를 구하는 연산자는?", ans: ["//"], ex: "정수 인덱스가 필요하니 <code>//</code>. <code>/</code>는 float을 만듭니다." },
+    { g: "search", lv: 1, code: `words.sort(key=___)   # 짧은 단어부터`, q: "길이순으로 정렬하려면 key에 무엇을?", ans: ["len"], ex: "<code>key=len</code>." },
+    { g: "search", lv: 2, code: `if arr[mid] < target:\n    lo = mid ___ 1\nelse:\n    hi = mid - 1`, q: "target이 더 크면 lo를 어떻게 옮길까?", ans: ["+"], ex: "mid는 이미 확인했으니 <code>mid + 1</code>부터 봅니다." },
+    { g: "rec", lv: 2, code: `def fact(n):\n    if n ___ 1:\n        return 1\n    return n * fact(n - 1)`, q: "fact(0)도 1이 되도록 하는 비교 연산자는?", ans: ["<="], ex: "기저 조건 <code>n <= 1</code>. 재귀는 기저 조건이 없으면 무한히 내려갑니다." },
+    { g: "rec", lv: 1, code: `def fib(n):\n    if n < 2:\n        return n\n    return fib(n - 1) ___ fib(n - 2)`, q: "피보나치 점화식의 연산자는?", ans: ["+"], ex: "F(n) = F(n-1) + F(n-2)." },
+    { g: "rec", lv: 3, code: `from functools import lru_cache\n\n@___\ndef fib(n):\n    ...`, q: "결과를 캐시하는 데코레이터는?", ans: ["lru_cache", "lru_cache(None)", "lru_cache(maxsize=None)"], ex: "<code>@lru_cache</code>(또는 <code>@lru_cache(maxsize=None)</code>)로 같은 인자의 결과를 저장합니다." },
+  ],
+  code: [
+    { g: "basic", lv: 1, title: "FizzBuzz", prompt: "1부터 n까지의 리스트를 돌려주되, 3의 배수는 <code>\"Fizz\"</code>, 5의 배수는 <code>\"Buzz\"</code>, 15의 배수는 <code>\"FizzBuzz\"</code>로 바꾸세요.",
+      starter: `def fizzbuzz(n):\n    result = []\n    \n    return result`,
+      tests: [["fizzbuzz(5)", "[1, 2, 'Fizz', 4, 'Buzz']"], ["fizzbuzz(15)[-1]", "'FizzBuzz'"], ["len(fizzbuzz(30))", "30"]],
+      sol: `def fizzbuzz(n):\n    result = []\n    for i in range(1, n + 1):\n        if i % 15 == 0:\n            result.append("FizzBuzz")\n        elif i % 3 == 0:\n            result.append("Fizz")\n        elif i % 5 == 0:\n            result.append("Buzz")\n        else:\n            result.append(i)\n    return result` },
+    { g: "basic", lv: 1, title: "단어 순서 뒤집기", prompt: "공백으로 구분된 문장의 단어 순서를 거꾸로 바꾼 문자열을 돌려주세요.",
+      starter: `def reverse_words(s):\n    pass`,
+      tests: [["reverse_words('hello world python')", "'python world hello'"], ["reverse_words('hi')", "'hi'"], ["reverse_words('a b')", "'b a'"]],
+      sol: `def reverse_words(s):\n    return " ".join(s.split()[::-1])` },
+    { g: "basic", lv: 2, title: "리스트 회전", prompt: "리스트를 오른쪽으로 k칸 회전한 새 리스트를 돌려주세요. k가 길이보다 클 수 있고, 빈 리스트도 들어옵니다.",
+      starter: `def rotate(lst, k):\n    pass`,
+      tests: [["rotate([1, 2, 3, 4, 5], 2)", "[4, 5, 1, 2, 3]"], ["rotate([1, 2, 3], 4)", "[3, 1, 2]"], ["rotate([1, 2], 0)", "[1, 2]"], ["rotate([], 3)", "[]"]],
+      sol: `def rotate(lst, k):\n    if not lst:\n        return []\n    k %= len(lst)\n    return lst[-k:] + lst[:-k]` },
+    { g: "hash", lv: 1, title: "글자 수 세기", prompt: "문자열에서 각 글자가 몇 번 나오는지 dict로 돌려주세요.",
+      starter: `def count_chars(s):\n    counts = {}\n    \n    return counts`,
+      tests: [["count_chars('aab')", "{'a': 2, 'b': 1}"], ["count_chars('')", "{}"], ["count_chars('banana')['n']", "2"]],
+      sol: `def count_chars(s):\n    counts = {}\n    for ch in s:\n        counts[ch] = counts.get(ch, 0) + 1\n    return counts` },
+    { g: "hash", lv: 1, title: "순서 유지 중복 제거", prompt: "처음 나온 순서를 유지하면서 중복을 제거한 리스트를 돌려주세요.",
+      starter: `def remove_duplicates(lst):\n    pass`,
+      tests: [["remove_duplicates([3, 1, 3, 2, 1])", "[3, 1, 2]"], ["remove_duplicates([])", "[]"], ["remove_duplicates([5, 5, 5])", "[5]"]],
+      sol: `def remove_duplicates(lst):\n    seen = set()\n    out = []\n    for x in lst:\n        if x not in seen:\n            seen.add(x)\n            out.append(x)\n    return out` },
+    { g: "hash", lv: 2, title: "Two Sum", prompt: "더해서 target이 되는 두 원소의 인덱스 <code>[i, j]</code>(i &lt; j)를 돌려주세요. 답은 정확히 하나. O(n)으로 풀어 보세요.",
+      starter: `def two_sum(nums, target):\n    pass`,
+      tests: [["two_sum([2, 7, 11, 15], 9)", "[0, 1]"], ["two_sum([3, 2, 4], 6)", "[1, 2]"], ["two_sum([3, 3], 6)", "[0, 1]"]],
+      sol: `def two_sum(nums, target):\n    where = {}\n    for j, x in enumerate(nums):\n        if target - x in where:\n            return [where[target - x], j]\n        where[x] = j` },
+    { g: "hash", lv: 2, title: "애너그램 판별", prompt: "두 문자열이 글자 구성이 같은 애너그램인지 True/False로 돌려주세요.",
+      starter: `def is_anagram(a, b):\n    pass`,
+      tests: [["is_anagram('listen', 'silent')", "True"], ["is_anagram('abc', 'abd')", "False"], ["is_anagram('aab', 'abb')", "False"]],
+      sol: `from collections import Counter\n\ndef is_anagram(a, b):\n    return Counter(a) == Counter(b)` },
+    { g: "linear", lv: 2, title: "괄호 짝 맞추기", prompt: "<code>()[]{}</code>로 이루어진 문자열이 올바르게 닫혔는지 판별하세요. 스택을 쓰면 됩니다.",
+      starter: `def is_valid(s):\n    stack = []\n    pairs = {")": "(", "]": "[", "}": "{"}\n    \n    return False`,
+      tests: [["is_valid('()[]{}')", "True"], ["is_valid('(]')", "False"], ["is_valid('([)]')", "False"], ["is_valid('{[]}')", "True"], ["is_valid('((')", "False"], ["is_valid('')", "True"]],
+      sol: `def is_valid(s):\n    stack = []\n    pairs = {")": "(", "]": "[", "}": "{"}\n    for c in s:\n        if c in pairs:\n            if not stack or stack.pop() != pairs[c]:\n                return False\n        else:\n            stack.append(c)\n    return not stack` },
+    { g: "linear", lv: 2, title: "후위 표기식 계산", prompt: "후위 표기식(RPN) 토큰 리스트를 계산하세요. 연산자는 <code>+ - *</code>, 피연산자는 정수 문자열입니다.",
+      starter: `def eval_rpn(tokens):\n    stack = []\n    \n    return stack[-1]`,
+      tests: [["eval_rpn(['2', '1', '+', '3', '*'])", "9"], ["eval_rpn(['5', '1', '2', '+', '4', '*', '+', '3', '-'])", "14"], ["eval_rpn(['7'])", "7"]],
+      sol: `def eval_rpn(tokens):\n    stack = []\n    for t in tokens:\n        if t in "+-*":\n            b = stack.pop()\n            a = stack.pop()\n            stack.append(a + b if t == "+" else a - b if t == "-" else a * b)\n        else:\n            stack.append(int(t))\n    return stack[-1]` },
+    { g: "linear", lv: 3, title: "뜨거운 감자", prompt: "큐로 게임을 흉내 내세요. 맨 앞 사람을 맨 뒤로 보내는 일을 k번 한 뒤 맨 앞 사람을 탈락시킵니다. 한 명이 남을 때까지 반복해 그 이름을 돌려주세요.",
+      starter: `from collections import deque\n\ndef hot_potato(names, k):\n    q = deque(names)\n    \n    return q[0]`,
+      tests: [["hot_potato(['A', 'B', 'C', 'D'], 1)", "'A'"], ["hot_potato(['A', 'B', 'C', 'D'], 0)", "'D'"], ["hot_potato(['A', 'B', 'C'], 2)", "'B'"]],
+      sol: `from collections import deque\n\ndef hot_potato(names, k):\n    q = deque(names)\n    while len(q) > 1:\n        for _ in range(k):\n            q.append(q.popleft())\n        q.popleft()\n    return q[0]` },
+    { g: "rec", lv: 1, title: "재귀 거듭제곱", prompt: "a의 n제곱을 재귀로 계산하세요. n은 0 이상의 정수입니다.",
+      starter: `def power(a, n):\n    pass`,
+      tests: [["power(2, 10)", "1024"], ["power(3, 0)", "1"], ["power(5, 3)", "125"]],
+      sol: `def power(a, n):\n    if n == 0:\n        return 1\n    return a * power(a, n - 1)` },
+    { g: "rec", lv: 2, title: "자릿수 합", prompt: "0 이상의 정수 n의 각 자릿수 합을 재귀로 구하세요.",
+      starter: `def sum_digits(n):\n    pass`,
+      tests: [["sum_digits(1234)", "10"], ["sum_digits(0)", "0"], ["sum_digits(9)", "9"], ["sum_digits(1001)", "2"]],
+      sol: `def sum_digits(n):\n    if n < 10:\n        return n\n    return n % 10 + sum_digits(n // 10)` },
+    { g: "rec", lv: 3, title: "리스트 펼치기", prompt: "얼마나 깊게 중첩됐든 리스트를 한 줄로 펼친 리스트를 돌려주세요.",
+      starter: `def flatten(lst):\n    pass`,
+      tests: [["flatten([1, [2, [3, 4]], 5])", "[1, 2, 3, 4, 5]"], ["flatten([])", "[]"], ["flatten([[[]]])", "[]"], ["flatten([[1], [[2]], 3])", "[1, 2, 3]"]],
+      sol: `def flatten(lst):\n    out = []\n    for x in lst:\n        if isinstance(x, list):\n            out.extend(flatten(x))\n        else:\n            out.append(x)\n    return out` },
+    { g: "search", lv: 1, title: "작은 값 세기", prompt: "리스트에서 x보다 작은 원소의 개수를 돌려주세요.",
+      starter: `def count_less(nums, x):\n    pass`,
+      tests: [["count_less([1, 5, 3, 7], 5)", "2"], ["count_less([], 1)", "0"], ["count_less([2, 2, 2], 3)", "3"]],
+      sol: `def count_less(nums, x):\n    return sum(1 for v in nums if v < x)` },
+    { g: "search", lv: 2, title: "이진 탐색", prompt: "오름차순 리스트에서 target의 인덱스를 돌려주고, 없으면 -1을 돌려주세요.",
+      starter: `def binary_search(arr, target):\n    lo, hi = 0, len(arr) - 1\n    \n    return -1`,
+      tests: [["binary_search([1, 3, 5, 7, 9], 7)", "3"], ["binary_search([1, 3, 5], 4)", "-1"], ["binary_search([], 1)", "-1"], ["binary_search([2], 2)", "0"]],
+      sol: `def binary_search(arr, target):\n    lo, hi = 0, len(arr) - 1\n    while lo <= hi:\n        mid = (lo + hi) // 2\n        if arr[mid] == target:\n            return mid\n        if arr[mid] < target:\n            lo = mid + 1\n        else:\n            hi = mid - 1\n    return -1` },
+    { g: "search", lv: 2, title: "정렬된 두 리스트 병합", prompt: "오름차순 리스트 두 개를 합쳐 오름차순 리스트로 돌려주세요. sorted 없이 두 포인터로 풀어 보세요.",
+      starter: `def merge(a, b):\n    i = j = 0\n    out = []\n    \n    return out`,
+      tests: [["merge([1, 4, 7], [2, 3, 9])", "[1, 2, 3, 4, 7, 9]"], ["merge([], [1])", "[1]"], ["merge([1, 1], [1])", "[1, 1, 1]"]],
+      sol: `def merge(a, b):\n    i = j = 0\n    out = []\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            out.append(a[i]); i += 1\n        else:\n            out.append(b[j]); j += 1\n    return out + a[i:] + b[j:]` },
+    { g: "search", lv: 3, title: "lower bound", prompt: "오름차순 리스트에서 <code>arr[i] >= x</code>를 만족하는 가장 작은 i를 O(log n)으로 찾으세요. 없으면 <code>len(arr)</code>.",
+      starter: `def lower_bound(arr, x):\n    pass`,
+      tests: [["lower_bound([1, 3, 3, 5], 3)", "1"], ["lower_bound([1, 2], 5)", "2"], ["lower_bound([], 0)", "0"], ["lower_bound([4, 6], 1)", "0"]],
+      sol: `def lower_bound(arr, x):\n    lo, hi = 0, len(arr)\n    while lo < hi:\n        mid = (lo + hi) // 2\n        if arr[mid] < x:\n            lo = mid + 1\n        else:\n            hi = mid\n    return lo` },
+    { g: "tree", lv: 2, title: "트리 높이", prompt: "트리는 <code>(값, 왼쪽, 오른쪽)</code> 튜플이고 빈 트리는 None입니다. 높이(노드 수 기준)를 돌려주세요.",
+      starter: `def depth(tree):\n    pass`,
+      tests: [["depth(None)", "0"], ["depth((1, None, None))", "1"], ["depth((1, (2, (3, None, None), None), (4, None, None)))", "3"]],
+      sol: `def depth(tree):\n    if tree is None:\n        return 0\n    _, left, right = tree\n    return 1 + max(depth(left), depth(right))` },
+    { g: "tree", lv: 2, title: "잎 노드 세기", prompt: "<code>(값, 왼쪽, 오른쪽)</code> 튜플 트리에서 자식이 없는 잎 노드의 개수를 돌려주세요.",
+      starter: `def count_leaves(tree):\n    pass`,
+      tests: [["count_leaves(None)", "0"], ["count_leaves((1, None, None))", "1"], ["count_leaves((1, (2, None, None), (3, (4, None, None), None)))", "2"]],
+      sol: `def count_leaves(tree):\n    if tree is None:\n        return 0\n    _, left, right = tree\n    if left is None and right is None:\n        return 1\n    return count_leaves(left) + count_leaves(right)` },
+    { g: "tree", lv: 3, title: "BFS 방문 순서", prompt: "인접 리스트 dict와 시작 정점을 받아 BFS 방문 순서를 리스트로 돌려주세요. 이웃은 리스트에 적힌 순서대로 봅니다.",
+      starter: `from collections import deque\n\ndef bfs_order(graph, start):\n    pass`,
+      tests: [["bfs_order({1: [2, 3], 2: [4], 3: [4], 4: []}, 1)", "[1, 2, 3, 4]"], ["bfs_order({'a': ['b'], 'b': ['a']}, 'a')", "['a', 'b']"], ["bfs_order({0: []}, 0)", "[0]"]],
+      sol: `from collections import deque\n\ndef bfs_order(graph, start):\n    seen = {start}\n    q = deque([start])\n    order = []\n    while q:\n        cur = q.popleft()\n        order.append(cur)\n        for nxt in graph[cur]:\n            if nxt not in seen:\n                seen.add(nxt)\n                q.append(nxt)\n    return order` },
+    { g: "tree", lv: 3, title: "경로 존재 여부", prompt: "방향 그래프 dict에서 a에서 b로 갈 수 있는지 DFS로 판별하세요.",
+      starter: `def has_path(graph, a, b):\n    pass`,
+      tests: [["has_path({1: [2], 2: [3], 3: [], 4: [1]}, 1, 3)", "True"], ["has_path({1: [2], 2: [3], 3: [], 4: [1]}, 1, 4)", "False"], ["has_path({'x': ['x']}, 'x', 'x')", "True"]],
+      sol: `def has_path(graph, a, b, seen=None):\n    if seen is None:\n        seen = set()\n    if a == b:\n        return True\n    seen.add(a)\n    return any(has_path(graph, n, b, seen)\n               for n in graph.get(a, []) if n not in seen)` },
+  ],
+};
+
+const TYPES = [
+  { id: "out", name: "출력 예측", desc: "코드를 읽고 결과 맞히기", time: 22 },
+  { id: "big", name: "시간복잡도", desc: "Big-O 고르기", time: 15 },
+  { id: "blank", name: "빈칸 채우기", desc: "빠진 코드 직접 입력", time: 25 },
+  { id: "code", name: "코드 작성", desc: "함수를 짜서 실제로 실행·채점", time: 0 },
+  { id: "stack", name: "스택 퍼즐", desc: "PUSH/POP으로 순서 맞추기", time: 40, puzzle: ["linear"] },
+  { id: "graph", name: "BFS·DFS 퍼즐", desc: "방문 순서대로 정점 클릭", time: 45, puzzle: ["tree", "linear", "rec"] },
+  { id: "tree", name: "트리 순회", desc: "전위·중위·후위·레벨 순회", time: 40, puzzle: ["tree", "rec"] },
+  { id: "bsearch", name: "이진 탐색", desc: "매 단계 mid를 직접 짚기", time: 40, puzzle: ["search"] },
+];
+const typeOf = id => TYPES.find(t => t.id === id);
+
+const DIFF = {
+  easy:   { name: "쉬움",   hearts: 5, time: 1.4,  lv: [1, 2],    hp: 2, boss: 4, score: 0.8, size: 0, note: "하트 5개 · 시간 넉넉 · 기초 문제 위주" },
+  normal: { name: "보통",   hearts: 3, time: 1,    lv: [1, 2, 3], hp: 3, boss: 5, score: 1,   size: 1, note: "하트 3개 · 모든 난이도의 문제" },
+  hard:   { name: "어려움", hearts: 2, time: 0.75, lv: [2, 3],    hp: 3, boss: 6, score: 1.5, size: 2, note: "하트 2개 · 시간 촉박 · 어려운 문제만 · 점수 ×1.5" },
+};
+
+const STAGES = [
+  { id: "basic",  name: "함정의 늪",     topic: "파이썬 기초",  desc: "별칭, 슬라이싱, 가변 기본값, 부동소수점", boss: { n: "가변 기본값 히드라", sub: "보스 · 머리를 자를 때마다 리스트가 늘어난다", s: "dragon", c: "#6aa36f" } },
+  { id: "linear", name: "스택·큐의 탑",  topic: "스택과 큐",    desc: "LIFO, FIFO, deque, 괄호 검사", boss: { n: "LIFO 리치", sub: "보스 · 마지막에 들어온 자가 먼저 나간다", s: "golem", c: "#7c8bd9" } },
+  { id: "hash",   name: "해시 성채",     topic: "dict와 set",   desc: "해시 조회, 빈도 세기, 집합 연산", boss: { n: "해시 충돌 키메라", sub: "보스 · 모든 키가 한 자리로 몰린다", s: "dragon", c: "#c98a3e" } },
+  { id: "rec",    name: "재귀 동굴",     topic: "재귀",         desc: "기저 조건, 호출 순서, 메모이제이션", boss: { n: "재귀 드래곤", sub: "보스 · 기저 조건이 없다", s: "dragon", c: "#d4574a" } },
+  { id: "search", name: "탐색의 미궁",   topic: "정렬과 탐색",  desc: "이진 탐색, key 정렬, 병합", boss: { n: "이진 미노타우로스", sub: "보스 · 미궁을 절반씩 무너뜨린다", s: "golem", c: "#b0654a" } },
+  { id: "tree",   name: "순회의 숲",     topic: "트리와 그래프", desc: "BFS, DFS, 트리 순회, 힙", boss: { n: "고목 트렌트", sub: "보스 · 뿌리부터 잎까지 순회한다", s: "golem", c: "#6f8f4a" } },
+];
+const STAGE_FLOORS = 5;
+
+const MONSTERS = [
+  { n: "None 슬라임", sub: "반환값을 잊은 함수에서 태어났다", s: "slime", c: "#5fb7a6" },
+  { n: "IndentationError 박쥐", sub: "탭과 스페이스 사이에 산다", s: "bat", c: "#9a7bd6" },
+  { n: "Off-by-One 고블린", sub: "항상 한 칸씩 어긋난다", s: "goblin", c: "#7fae4e" },
+  { n: "무한루프 골렘", sub: "while True의 수호자", s: "golem", c: "#8f94ab" },
+  { n: "KeyError 스켈레톤", sub: "없는 키만 찾아다닌다", s: "goblin", c: "#c9c2a8" },
+  { n: "얕은 복사 슬라임", sub: "건드리면 원본도 바뀐다", s: "slime", c: "#d08bb0" },
+  { n: "StackOverflow 박쥐", sub: "재귀 깊이 1000에서 깨어난다", s: "bat", c: "#d98b5f" },
+];
+const ENDLESS_BOSS = { n: "재귀 드래곤", sub: "보스 · 기저 조건이 없다", s: "dragon", c: "#d4574a" };
+
+const SPRITES = {
+  slime: ["..........","...aaaa...","..aaaaaa..",".aaaaaaaa.",".aeaaaaea.",".aaaaaaaa.","aaabbbbaaa","aaaaaaaaaa",".bbbbbbbb.",".........."],
+  bat: ["..........","a..a..a..a","aa.aaaa.aa","aaaaaaaaaa","aaaeaaeaaa",".aaaaaaaa.","..a.bb.a..","....bb....","..........",".........."],
+  goblin: ["..........","a..aaaa..a","aaaaaaaaaa",".aaeaaeaa.",".aaaaaaaa.",".aabbbbaa.","..aaaaaa..","..b.aa.b..","..b....b..",".........."],
+  golem: ["..bbbbbb..",".baaaaaab.",".baeaaeab.",".baaaaaab.","bbbbbbbbbb","ba.aaaa.ab","ba.aaaa.ab","...aaaa...","...a..a...","..bb..bb.."],
+  dragon: ["a.........a.","aa.......aa.",".aaaaaaaaa..",".aeaaaaaeaa.",".aaaaaaaaaa.","..abbbbbba..","aaaaaaaaaaaa","a.aaaaaaaa.a","...aaaaaa...","...aa..aa...","..bbb..bbb..","............"],
+};
+
+// =====================================================================
+// Helpers
+// =====================================================================
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+function highlight(src) {
+  const re = /(#[^\n]*)|("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')|\b(def|return|if|else|elif|for|in|while|import|from|True|False|None|lambda|not|and|or|class|is|try|except|pass)\b|\b(print|len|range|sorted|type|bool|set|list|dict|deque|max|min|sum|any|isinstance|enumerate|int)\b|\b(\d+(?:\.\d+)?)\b|(___)/g;
+  let out = "", last = 0, m;
+  while ((m = re.exec(src))) {
+    out += esc(src.slice(last, m.index));
+    const t = esc(m[0]);
+    out += m[1] ? `<span class="c">${t}</span>` : m[2] ? `<span class="s">${t}</span>` : m[3] ? `<span class="k">${t}</span>`
+      : m[4] ? `<span class="f">${t}</span>` : m[5] ? `<span class="n">${t}</span>` : `<span class="blank">???</span>`;
+    last = re.lastIndex;
+  }
+  return out + esc(src.slice(last));
+}
+function shade(hex, k) {
+  const v = parseInt(hex.slice(1), 16), f = c => Math.max(0, Math.min(255, Math.round(c * (1 + k))));
+  return "#" + [(v >> 16) & 255, (v >> 8) & 255, v & 255].map(f).map(c => c.toString(16).padStart(2, "0")).join("");
+}
+function drawSprite(canvas, key, color) {
+  const rows = SPRITES[key], n = rows.length, ctx = canvas.getContext("2d");
+  canvas.width = n; canvas.height = n; ctx.clearRect(0, 0, n, n);
+  const dark = shade(color, -0.35);
+  rows.forEach((r, y) => [...r].forEach((ch, x) => {
+    const col = ch === "a" ? color : ch === "b" ? dark : ch === "e" ? "#fff8e1" : null;
+    if (col) { ctx.fillStyle = col; ctx.fillRect(x, y, 1, 1); }
+  }));
+}
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+const starsHtml = (n, cls = "") => `<span class="${cls}">${[1, 2, 3].map(i => i <= n ? "★" : `<span class="off">★</span>`).join("")}</span>`;
+
+// =====================================================================
+// Python runner (Brython, loaded on first use)
+// =====================================================================
+const BRY = "https://cdn.jsdelivr.net/npm/brython@3.13.2/";
+let pyReady = null, pyRunId = 0;
+function loadPy() {
+  if (pyReady) return pyReady;
+  const add = src => new Promise((ok, fail) => {
+    const s = document.createElement("script"); s.src = src; s.onload = ok;
+    s.onerror = () => fail(new Error("파이썬 엔진을 불러오지 못했습니다. 네트워크를 확인하고 다시 시도하세요."));
+    document.head.appendChild(s);
+  });
+  pyReady = add(BRY + "brython.min.js").then(() => add(BRY + "brython_stdlib.js")).then(() => { window.brython({ debug: 0 }); })
+    .catch(e => { pyReady = null; throw e; });
+  return pyReady;
+}
+const HARNESS = `
+import sys, json
+from browser import window
+class _Out:
+    def __init__(self):
+        self.buf = []
+    def write(self, t):
+        self.buf.append(str(t))
+    def flush(self):
+        pass
+_out = _Out()
+_old = sys.stdout
+sys.stdout = _out
+_res = []
+_err = None
+_ns = {"__name__": "__main__"}
+try:
+    exec(__SRC__, _ns)
+except BaseException as e:
+    _err = type(e).__name__ + ": " + str(e)
+if _err is None:
+    for _expr, _exp in __TESTS__:
+        try:
+            _got = eval(_expr, _ns)
+            _want = eval(_exp, _ns)
+            _res.append([_expr, repr(_want), repr(_got), bool(_got == _want)])
+        except BaseException as e:
+            _res.append([_expr, _exp, type(e).__name__ + ": " + str(e), False])
+sys.stdout = _old
+window.pdReport(json.dumps({"out": "".join(_out.buf), "err": _err, "tests": _res}))
+`;
+function runPython(src, tests = []) {
+  return loadPy().then(() => new Promise((ok, fail) => {
+    let got = null;
+    window.pdReport = s => { got = JSON.parse(s); };
+    const prog = HARNESS.replace("__SRC__", () => JSON.stringify(src)).replace("__TESTS__", () => JSON.stringify(tests));
+    try { window.__BRYTHON__.runPythonSource(prog, "pd_run_" + (++pyRunId)); }
+    catch (e) { return fail(new Error("실행기 오류: " + (e && e.message || e))); }
+    got ? ok(got) : fail(new Error("실행 결과를 받지 못했습니다."));
+  }));
+}
+
+// =====================================================================
+// Menu
+// =====================================================================
+let G = null, timerId = null;
+const app = $("#app");
+const prefs = Object.assign({ diff: "normal", tab: "stage", types: TYPES.map(t => t.id), code: true }, store.get("pd-prefs", {}));
+const savePrefs = () => store.set("pd-prefs", prefs);
+
+function menu() {
+  stopTimer(); G = null;
+  const stars = store.get("pd-stars", {});
+  const D = DIFF[prefs.diff];
+  app.innerHTML = `
+    <section class="screen">
+      <h1>파이썬 던전<small>파이썬과 자료구조 문제를 풀어 몬스터를 쓰러뜨리고 더 깊은 층으로 내려가세요.</small></h1>
+      <ul class="rules">
+        <li>정답 = 몬스터에게 1 데미지(퍼즐과 코드 작성은 2). 3연속 정답부터 크리티컬 +1.</li>
+        <li>오답이나 시간 초과 = 하트 1개를 잃습니다. 코드 작성은 다시 제출할 수 있고, 포기하면 하트를 잃습니다.</li>
+        <li>단축키: 보기 1–4, 다음 Enter, 스택 퍼즐 Q/W, 코드 실행 Ctrl+Enter.</li>
+      </ul>
+      <div class="section">
+        <h2>난이도</h2>
+        <div class="seg" role="radiogroup" aria-label="난이도">
+          ${Object.entries(DIFF).map(([k, d]) => `<label><input type="radio" name="diff" id="diff-${k}" value="${k}" ${prefs.diff === k ? "checked" : ""}><span>${d.name}</span></label>`).join("")}
+        </div>
+        <div class="diffnote">${D.note}</div>
+      </div>
+      <div class="section">
+        <div class="tabs" role="tablist">
+          <button role="tab" id="tab-stage" aria-selected="${prefs.tab === "stage"}">스테이지</button>
+          <button role="tab" id="tab-endless" aria-selected="${prefs.tab === "endless"}">무한 던전</button>
+        </div>
+        <div id="tabbody"></div>
+      </div>
+    </section>`;
+  app.querySelectorAll('input[name="diff"]').forEach(r => r.onchange = () => { prefs.diff = r.value; savePrefs(); menu(); });
+  $("#tab-stage").onclick = () => { prefs.tab = "stage"; savePrefs(); menu(); };
+  $("#tab-endless").onclick = () => { prefs.tab = "endless"; savePrefs(); menu(); };
+  const body = $("#tabbody");
+  if (prefs.tab === "stage") {
+    body.innerHTML = `
+      <p class="muted">주제 하나만 집중해서 ${STAGE_FLOORS}층을 돌파합니다. 마지막 층에는 그 주제의 보스가 기다립니다. 남은 하트로 별을 받습니다.</p>
+      <div class="stages">
+        ${STAGES.map(s => `<button class="stage" data-id="${s.id}">
+          <span class="tp">${s.topic}</span><span class="nm">${s.name}</span><span class="ds">${s.desc}</span>
+          ${starsHtml(stars[s.id + ":" + prefs.diff] || 0, "stars")}</button>`).join("")}
+      </div>
+      <label class="check"><input type="checkbox" id="opt-code" ${prefs.code ? "checked" : ""}><span>코드 작성 문제 포함 (첫 실행 때 파이썬 엔진 약 5MB를 내려받습니다)</span></label>`;
+    $("#opt-code").onchange = e => { prefs.code = e.target.checked; savePrefs(); };
+    body.querySelectorAll(".stage").forEach(b => b.onclick = () => startGame({ mode: "stage", stage: STAGES.find(s => s.id === b.dataset.id) }));
+  } else {
+    const best = store.get("pd-best-" + prefs.diff, 0);
+    body.innerHTML = `
+      <p class="muted">고른 유형이 섞여 끝없이 나옵니다. 5층마다 보스가 나오고, 보스를 잡으면 하트 1개를 회복합니다.</p>
+      <div class="topics">
+        ${TYPES.map(t => `<label><input type="checkbox" id="tp-${t.id}" value="${t.id}" ${prefs.types.includes(t.id) ? "checked" : ""}><div><b>${t.name}</b><span>${t.desc}</span></div></label>`).join("")}
+      </div>
+      <div class="row"><button class="btn" id="go">던전 입장</button><span class="muted">${D.name} 최고 점수 <b style="font-family:var(--mono);color:var(--ink)">${best.toLocaleString()}</b></span></div>`;
+    $("#go").onclick = () => {
+      const types = [...body.querySelectorAll(".topics input:checked")].map(i => i.value);
+      if (!types.length) { $("#go").textContent = "유형을 하나 이상 고르세요"; return; }
+      prefs.types = types; savePrefs();
+      startGame({ mode: "endless", types });
+    };
+  }
+}
+
+// =====================================================================
+// Game flow
+// =====================================================================
+function buildPool(cfg) {
+  const D = DIFF[prefs.diff], pool = [];
+  for (const type of ["out", "big", "blank", "code"]) {
+    if (cfg.mode === "endless" && !cfg.types.includes(type)) continue;
+    if (cfg.mode === "stage" && type === "code" && !prefs.code) continue;
+    for (const card of BANK[type]) {
+      if (!D.lv.includes(card.lv)) continue;
+      if (cfg.mode === "stage" && card.g !== cfg.stage.id) continue;
+      pool.push({ type, card });
+    }
+  }
+  for (const t of TYPES.filter(t => t.puzzle)) {
+    if (cfg.mode === "endless" && cfg.types.includes(t.id)) pool.push({ type: t.id });
+    if (cfg.mode === "stage" && t.puzzle.includes(cfg.stage.id)) pool.push({ type: t.id }, { type: t.id }, { type: t.id });
+  }
+  return pool;
+}
+
+function startGame(cfg) {
+  const D = DIFF[prefs.diff];
+  const pool = buildPool(cfg);
+  if (!pool.length) { alertBox("이 조합에는 문제가 없습니다. 유형이나 난이도를 바꿔 보세요."); return; }
+  G = { ...cfg, diff: prefs.diff, pool, deck: [], floor: 1, hp: D.hearts, maxHp: D.hearts, score: 0, combo: 0, bestCombo: 0, solved: 0, tried: 0, kills: 0, last: null };
+  newMonster();
+}
+function alertBox(msg) {
+  const old = $("#tabbody .status"); if (old) old.remove();
+  const p = document.createElement("p"); p.className = "status err"; p.textContent = msg; $("#tabbody").appendChild(p);
+}
+function drawEntry() {
+  if (!G.deck.length) G.deck = shuffle(G.pool);
+  let e = G.deck.pop();
+  if (G.pool.length > 1 && G.last && e.card && e.card === G.last.card) { G.deck.unshift(e); e = G.deck.pop(); }
+  G.last = e;
+  return e;
+}
+
+function newMonster() {
+  const D = DIFF[G.diff];
+  const boss = G.mode === "stage" ? G.floor === STAGE_FLOORS : G.floor % 5 === 0;
+  const m = boss ? (G.mode === "stage" ? G.stage.boss : ENDLESS_BOSS) : pick(MONSTERS);
+  const hp = boss ? D.boss : D.hp;
+  G.mon = { ...m, hp, max: hp, boss };
+  renderShell();
+  nextQuestion();
+}
+
+function renderShell() {
+  app.innerHTML = `
+    <div class="hud" id="hud"></div>
+    <div class="arena" id="arena">
+      <canvas id="spr" aria-hidden="true"></canvas>
+      <div>
+        <p class="mon-name">${G.mon.n}<small>${G.mon.sub}</small></p>
+        <div class="hpbar"><i id="hpfill"></i></div>
+        <div class="hptext" id="hptext"></div>
+      </div>
+    </div>
+    <div class="console" id="con"></div>`;
+  drawSprite($("#spr"), G.mon.s, G.mon.c);
+  updateHud();
+}
+
+function updateHud() {
+  const hearts = Array.from({ length: G.maxHp }, (_, i) => `<span class="${i < G.hp ? "" : "lost"}">♥</span>`).join("");
+  const where = G.mode === "stage" ? `${G.stage.name} ${G.floor}/${STAGE_FLOORS}` : `B${G.floor}F`;
+  $("#hud").innerHTML = `
+    <span class="floor">${where}</span>
+    <span class="hearts" aria-label="남은 하트 ${G.hp}">${hearts}</span>
+    <span class="spacer"></span>
+    <span class="combo" data-on="${G.combo >= 3 ? 1 : 0}">COMBO x${G.combo}</span>
+    <span class="stat">점수 <b>${G.score.toLocaleString()}</b></span>
+    <button class="quit" id="quit">나가기</button>`;
+  $("#hpfill").style.width = (G.mon.hp / G.mon.max * 100) + "%";
+  $("#hptext").textContent = `HP ${G.mon.hp} / ${G.mon.max}`;
+  $("#quit").onclick = () => { if ($("#quit").dataset.armed) return menu(); $("#quit").dataset.armed = 1; $("#quit").textContent = "정말 나갈까요? 다시 클릭"; };
+}
+
+function nextQuestion() {
+  const entry = drawEntry();
+  const T = typeOf(entry.type), D = DIFF[G.diff];
+  const decay = G.mode === "endless" ? Math.max(0.6, 1 - (G.floor - 1) * 0.03) : 1;
+  const limit = T.time ? T.time * D.time * decay : 0;
+  G.q = { type: entry.type, limit, left: limit, done: false, keys: null };
+  const lvTag = entry.card ? `<span class="tag lv">LV ${entry.card.lv}</span>` : "";
+  $("#con").innerHTML = `<div class="qhead"><div class="tags"><span class="tag">${T.name}</span>${lvTag}</div>${limit ? `<div class="timer" id="timer"><i id="tfill"></i></div>` : `<span class="notimer">시간 제한 없음</span>`}</div><div class="qbody" id="qbody"></div>`;
+  const body = $("#qbody");
+  const R = { out: renderMC, big: renderMC, blank: renderBlank, code: renderCode, stack: renderStack, graph: renderGraph, tree: renderTree, bsearch: renderBsearch };
+  R[entry.type](body, entry.card);
+  if (limit) startTimer();
+}
+
+// ---------- Multiple choice ----------
+function renderMC(body, card) {
+  const correct = card.opts[0];
+  const opts = shuffle(card.opts);
+  G.q.ex = card.ex; G.q.answerText = correct;
+  if (G.q.type === "out") G.q.runnable = card.code;
+  body.innerHTML = `
+    <p class="q">${card.q || "출력 결과는?"}</p>
+    <pre class="code">${highlight(card.code)}</pre>
+    <div class="opts">${opts.map((o, i) => `<button class="opt" data-i="${i}"><kbd>${i + 1}</kbd><span>${esc(o)}</span></button>`).join("")}</div>`;
+  const btns = [...body.querySelectorAll(".opt")];
+  btns.forEach(b => b.onclick = () => {
+    if (G.q.done) return;
+    const ok = opts[+b.dataset.i] === correct;
+    btns.forEach(x => { x.disabled = true; if (opts[+x.dataset.i] === correct) x.classList.add("right"); });
+    if (!ok) b.classList.add("wrong");
+    resolve(ok);
+  });
+  G.q.keys = e => { const n = +e.key; if (n >= 1 && n <= btns.length) btns[n - 1].click(); };
+}
+
+// ---------- Fill in the blank ----------
+function renderBlank(body, card) {
+  G.q.ex = card.ex; G.q.answerText = card.ans[0];
+  body.innerHTML = `
+    <p class="q">${card.q}</p>
+    <pre class="code">${highlight(card.code)}</pre>
+    <form class="row" id="bf"><input type="text" id="bi" autocomplete="off" spellcheck="false" placeholder="??? 자리에 들어갈 코드"><button class="btn">공격</button></form>`;
+  const input = $("#bi");
+  input.focus();
+  $("#bf").onsubmit = e => {
+    e.preventDefault();
+    if (G.q.done) return;
+    const v = input.value.trim().replace(/\s+/g, "").replace(/\(\)$/, "");
+    if (!v) return;
+    input.disabled = true;
+    resolve(card.ans.map(a => a.replace(/\s+/g, "")).includes(v));
+  };
+}
+
+// ---------- Code writing (run + grade) ----------
+function renderCode(body, card) {
+  G.q.ex = "모범 답안과 비교해 보세요. 테스트를 모두 통과하는 코드는 여러 가지가 있을 수 있습니다.";
+  G.q.answerText = null; G.q.sol = card.sol; G.q.fails = 0;
+  body.innerHTML = `
+    <p class="q">${card.title}</p>
+    <p class="qsub">${card.prompt}</p>
+    <textarea class="editor" id="ed" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="코드 편집기">${esc(card.starter)}</textarea>
+    <div class="row">
+      <button class="btn" id="run">실행해서 채점</button>
+      <button class="btn ghost" id="giveup">포기하고 답 보기</button>
+      <span class="status" id="st">테스트 ${card.tests.length}개 · Ctrl+Enter로 실행</span>
+    </div>
+    <div class="results" id="res"></div>`;
+  const ed = $("#ed");
+  ed.focus();
+  const caret = ed.value.indexOf("\n    \n");
+  if (caret >= 0) ed.setSelectionRange(caret + 5, caret + 5);
+  ed.addEventListener("keydown", e => {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      const s = ed.selectionStart;
+      ed.setRangeText("    ", s, ed.selectionEnd, "end");
+    } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault(); $("#run").click();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const s = ed.selectionStart, line = ed.value.slice(0, s).split("\n").pop();
+      let ind = line.match(/^\s*/)[0];
+      if (/:\s*$/.test(line)) ind += "    ";
+      ed.setRangeText("\n" + ind, s, ed.selectionEnd, "end");
+    }
+  });
+  $("#giveup").onclick = () => { if (G.q.done) return; lockCode(); resolve(false, { extra: solHtml(card.sol) }); };
+  $("#run").onclick = async () => {
+    if (G.q.done) return;
+    const st = $("#st"), btn = $("#run");
+    btn.disabled = true;
+    st.className = "status";
+    st.textContent = pyReady ? "실행 중…" : "파이썬 엔진 불러오는 중… (처음 한 번만)";
+    await new Promise(r => setTimeout(r, 30));
+    try {
+      const r = await runPython(ed.value, card.tests);
+      const pass = r.tests.filter(t => t[3]).length;
+      $("#res").innerHTML = resultsHtml(r);
+      if (!r.err && pass === card.tests.length) {
+        lockCode();
+        st.textContent = `테스트 ${pass}/${card.tests.length} 통과`;
+        resolve(true, { dmg: 2, mul: 1 / (1 + G.q.fails * 0.5), extra: solHtml(card.sol, "모범 답안") });
+      } else {
+        G.q.fails++;
+        st.className = "status err";
+        st.textContent = r.err ? "코드를 실행하다 오류가 났습니다. 고친 뒤 다시 실행하세요." : `테스트 ${pass}/${card.tests.length} 통과 · 고친 뒤 다시 실행하세요 (실패할수록 점수 감소)`;
+        btn.disabled = false;
+      }
+    } catch (e) {
+      st.className = "status err"; st.textContent = e.message; btn.disabled = false;
+    }
+  };
+}
+function lockCode() { ["#ed", "#run", "#giveup"].forEach(s => { const el = $(s); if (el) el.disabled = true; }); }
+function solHtml(sol, label = "모범 답안") { return `<span class="lbl">${label}</span><pre class="code small">${highlight(sol)}</pre>`; }
+function resultsHtml(r) {
+  let h = "";
+  if (r.err) h += `<div class="tres fail"><span class="mark">✗</span><span class="expr">코드 실행</span><span class="detail">${esc(r.err)}</span></div>`;
+  for (const [expr, want, got, ok] of r.tests) {
+    h += `<div class="tres ${ok ? "pass" : "fail"}"><span class="mark">${ok ? "✓" : "✗"}</span><span class="expr">${esc(expr)}</span>` +
+      (ok ? "" : `<span class="detail">기대값 <b>${esc(want)}</b> · 결과 <b>${esc(got)}</b></span>`) + `</div>`;
+  }
+  if (r.out) h += `<span class="lbl status">print 출력</span><pre class="code small">${esc(r.out)}</pre>`;
+  return h;
+}
+
+// ---------- Stack puzzle ----------
+function makeTarget(n) {
+  for (;;) {
+    let next = 1; const st = [], out = [];
+    while (out.length < n) {
+      if (next <= n && (!st.length || Math.random() < 0.55)) st.push(next++);
+      else out.push(st.pop());
+    }
+    if (out.some((v, i) => v !== i + 1)) return out;
+  }
+}
+function renderStack(body) {
+  const n = [4, 5, 6][DIFF[G.diff].size];
+  const P = { n, target: makeTarget(n), input: Array.from({ length: n }, (_, i) => i + 1), stack: [], out: [] };
+  G.q.ex = "스택은 마지막에 넣은 것이 먼저 나옵니다(LIFO). 목표의 다음 숫자가 스택 맨 위에 있을 때만 POP하고, 아니면 그 숫자가 나올 때까지 PUSH하세요.";
+  G.q.answerText = P.target.join(" ");
+  body.innerHTML = `
+    <p class="q">입력 1→${n}을 스택에 넣고 빼서 목표 순서대로 출력하세요.</p>
+    <div class="target" id="tg"></div>
+    <div class="board">
+      <div class="zone"><h4>입력 대기열</h4><div class="items" id="zin"></div></div>
+      <div class="zone stack"><h4>스택</h4><div class="items" id="zst"></div><div class="hint">↑ top</div></div>
+      <div class="zone"><h4>출력</h4><div class="items" id="zout"></div></div>
+    </div>
+    <div class="row"><button class="btn" id="bpush">PUSH (Q)</button><button class="btn ghost" id="bpop">POP (W)</button></div>`;
+  const draw = () => {
+    $("#tg").innerHTML = `<span class="lbl">목표 출력</span>` + P.target.map((v, i) => `<span class="cell ${i < P.out.length ? "done" : i === P.out.length ? "next" : ""}">${v}</span>`).join("");
+    $("#zin").innerHTML = P.input.map(v => `<span class="cell">${v}</span>`).join("") || `<span class="cell ghost">·</span>`;
+    $("#zst").innerHTML = P.stack.slice().reverse().map(v => `<span class="cell">${v}</span>`).join("");
+    $("#zout").innerHTML = P.out.map(v => `<span class="cell done">${v}</span>`).join("");
+    $("#bpush").disabled = !P.input.length || G.q.done;
+    $("#bpop").disabled = !P.stack.length || G.q.done;
+  };
+  $("#bpush").onclick = () => { if (G.q.done || !P.input.length) return; P.stack.push(P.input.shift()); draw(); };
+  $("#bpop").onclick = () => {
+    if (G.q.done || !P.stack.length) return;
+    const v = P.stack[P.stack.length - 1];
+    const expect = P.target[P.out.length];
+    if (v !== expect) {
+      G.q.ex = `스택 맨 위의 ${v}를 꺼내려 했지만 목표의 다음 숫자는 ${expect}였습니다. ` + G.q.ex;
+      resolve(false); draw(); return;
+    }
+    P.out.push(P.stack.pop()); draw();
+    if (P.out.length === P.n) resolve(true, { dmg: 2 });
+  };
+  G.q.keys = e => { const k = e.key.toLowerCase(); if (k === "q") $("#bpush").click(); if (k === "w") $("#bpop").click(); };
+  draw();
+}
+
+// ---------- BFS / DFS puzzle ----------
+function makeGraph(n) {
+  const pos = i => ({ c: i % 3, r: Math.floor(i / 3) });
+  const near = (a, b) => { const p = pos(a), q = pos(b); return a !== b && Math.abs(p.c - q.c) <= 1 && Math.abs(p.r - q.r) <= 1; };
+  const E = [];
+  const has = (a, b) => E.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
+  const crosses = (a, b) => { const p = pos(a), q = pos(b); if (p.c === q.c || p.r === q.r) return false; return has(p.r * 3 + q.c, q.r * 3 + p.c); };
+  const chosen = [rnd(0, 8)];
+  while (chosen.length < n) {
+    const cands = [];
+    for (let s = 0; s < 9; s++) if (!chosen.includes(s)) for (const t of chosen) if (near(s, t) && !crosses(s, t)) cands.push([t, s]);
+    const [t, s] = pick(cands); chosen.push(s); E.push([t, s]);
+  }
+  const extra = rnd(1, 2);
+  for (let k = 0, tries = 0; k < extra && tries < 60; tries++) {
+    const a = pick(chosen), b = pick(chosen);
+    if (!near(a, b) || has(a, b) || crosses(a, b)) continue;
+    E.push([a, b]); k++;
+  }
+  const letters = shuffle("ABCDEFG".slice(0, n).split(""));
+  const name = {}; chosen.forEach((s, i) => name[s] = letters[i]);
+  const nodes = chosen.map(s => ({ id: name[s], x: 60 + pos(s).c * 120 + rnd(-10, 10), y: 40 + pos(s).r * 86 + rnd(-8, 8) }));
+  const edges = E.map(([a, b]) => [name[a], name[b]]);
+  const adj = {}; nodes.forEach(nd => adj[nd.id] = []);
+  edges.forEach(([a, b]) => { adj[a].push(b); adj[b].push(a); });
+  Object.values(adj).forEach(l => l.sort());
+  return { nodes, edges, adj };
+}
+function renderGraph(body) {
+  const D = DIFF[G.diff];
+  const n = [5, 6, 7][D.size];
+  const g = makeGraph(n);
+  const at = G.mode === "stage" ? G.stage.id : null;
+  const algo = at === "linear" ? "BFS" : at === "rec" ? "DFS" : D.size === 0 ? "BFS" : pick(["BFS", "DFS"]);
+  const start = "A", order = [], snaps = [];
+  if (algo === "BFS") {
+    const seen = new Set([start]), q = [start];
+    while (q.length) { const u = q.shift(); order.push(u); for (const v of g.adj[u]) if (!seen.has(v)) { seen.add(v); q.push(v); } snaps.push(q.slice()); }
+  } else {
+    const seen = new Set(), path = [];
+    const dfs = u => { seen.add(u); path.push(u); order.push(u); snaps.push(path.slice()); for (const v of g.adj[u]) if (!seen.has(v)) dfs(v); path.pop(); };
+    dfs(start);
+  }
+  G.q.answerText = order.join(" → ");
+  G.q.ex = algo === "BFS"
+    ? "BFS는 큐를 씁니다. 꺼낸 정점의 이웃 중 아직 안 본 것을 알파벳순으로 큐 뒤에 넣고, 큐 앞에서 다음 정점을 꺼냅니다. 가까운 정점부터 퍼져 나갑니다."
+    : "DFS(재귀)는 이웃을 알파벳순으로 보면서 아직 안 간 정점이 있으면 바로 그쪽으로 끝까지 내려가고, 막히면 되돌아옵니다.";
+  const W = 380, H = 260;
+  body.innerHTML = `
+    <p class="q">${start}에서 시작하는 <b>${algo}</b> 방문 순서대로 정점을 클릭하세요.</p>
+    <p class="qsub">이웃은 알파벳순으로 확인합니다.</p>
+    <div class="svgbox"><svg viewBox="0 0 ${W} ${H}" width="${W}" role="group" aria-label="그래프">
+      ${g.edges.map(([a, b]) => { const p = g.nodes.find(x => x.id === a), q = g.nodes.find(x => x.id === b); return `<line class="gedge" x1="${p.x}" y1="${p.y}" x2="${q.x}" y2="${q.y}"/>`; }).join("")}
+      ${g.nodes.map(nd => `<g class="gnode ${nd.id === start ? "start" : ""}" data-id="${nd.id}" tabindex="0" role="button" aria-label="정점 ${nd.id}"><circle cx="${nd.x}" cy="${nd.y}" r="19"/><text x="${nd.x}" y="${nd.y}">${nd.id}</text><text class="ord" x="${nd.x + 20}" y="${nd.y - 18}"></text></g>`).join("")}
+    </svg></div>
+    <div class="log" id="glog"></div>`;
+  let idx = 0;
+  const log = () => {
+    const visited = order.slice(0, idx).join(" ") || "—";
+    const cur = idx ? snaps[idx - 1] : (algo === "BFS" ? [start] : []);
+    $("#glog").innerHTML = `<span>방문: <b>${visited}</b></span>` +
+      (algo === "BFS" ? `<span>큐: <b>[${cur.join(", ")}]</b></span>` : `<span>호출 스택: <b>${cur.join(" → ") || "(비어 있음)"}</b></span>`);
+  };
+  const click = el => {
+    if (G.q.done || el.classList.contains("done")) return;
+    const id = el.dataset.id;
+    if (id !== order[idx]) {
+      G.q.ex = `${idx + 1}번째로 방문할 정점은 ${order[idx]}였습니다. ` + G.q.ex;
+      return resolve(false);
+    }
+    el.classList.add("done"); el.querySelector(".ord").textContent = ++idx; log();
+    if (idx === order.length) resolve(true, { dmg: 2 });
+  };
+  body.querySelectorAll(".gnode").forEach(el => {
+    el.addEventListener("click", () => click(el));
+    el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); click(el); } });
+  });
+  log();
+}
+
+// ---------- Tree traversal puzzle ----------
+function makeTree(n) {
+  const vals = shuffle(Array.from({ length: 40 }, (_, i) => i + 1)).slice(0, n);
+  const root = { v: vals[0], l: null, r: null, d: 0 }, all = [root];
+  for (let i = 1; i < n; i++) {
+    const slots = [];
+    for (const nd of all) if (nd.d < 3) { if (!nd.l) slots.push([nd, "l"]); if (!nd.r) slots.push([nd, "r"]); }
+    const [p, side] = pick(slots);
+    const c = { v: vals[i], l: null, r: null, d: p.d + 1 };
+    p[side] = c; all.push(c);
+  }
+  return { root, all };
+}
+function renderTree(body) {
+  const D = DIFF[G.diff];
+  const n = [5, 7, 8][D.size];
+  const { root, all } = makeTree(n);
+  const kinds = { pre: "전위", in: "중위", post: "후위", level: "레벨" };
+  const pool = D.size === 0 ? ["pre", "level"] : D.size === 1 ? ["pre", "in", "post", "level"] : ["in", "post", "post"];
+  const kind = pick(pool);
+  const order = [];
+  const walk = nd => { if (!nd) return; if (kind === "pre") order.push(nd); walk(nd.l); if (kind === "in") order.push(nd); walk(nd.r); if (kind === "post") order.push(nd); };
+  if (kind === "level") { const q = [root]; while (q.length) { const u = q.shift(); order.push(u); if (u.l) q.push(u.l); if (u.r) q.push(u.r); } }
+  else walk(root);
+  const inord = []; const iw = nd => { if (!nd) return; iw(nd.l); inord.push(nd); iw(nd.r); }; iw(root);
+  const W = 380, depth = Math.max(...all.map(a => a.d));
+  const H = 50 + depth * 66 + 30;
+  inord.forEach((nd, i) => { nd.x = n === 1 ? W / 2 : 30 + i * (W - 60) / (n - 1); nd.y = 30 + nd.d * 66; });
+  const rule = { pre: "루트 → 왼쪽 → 오른쪽", in: "왼쪽 → 루트 → 오른쪽", post: "왼쪽 → 오른쪽 → 루트", level: "위층부터 한 층씩, 왼쪽에서 오른쪽" }[kind];
+  G.q.answerText = order.map(o => o.v).join(" ");
+  G.q.ex = `${kinds[kind]} 순회는 ${rule} 순서입니다.` + (kind === "in" ? " 이진 탐색 트리라면 중위 순회 결과가 정렬된 순서가 됩니다." : kind === "post" ? " 자식을 다 처리한 뒤 부모를 처리할 때(예: 폴더 크기 계산) 씁니다." : "");
+  const lines = all.flatMap(nd => [nd.l, nd.r].filter(Boolean).map(c => `<line class="gedge" x1="${nd.x}" y1="${nd.y}" x2="${c.x}" y2="${c.y}"/>`)).join("");
+  body.innerHTML = `
+    <p class="q">이진 트리를 <b>${kinds[kind]} 순회</b> 순서대로 클릭하세요.</p>
+    <p class="qsub">${kinds[kind]} 순회: ${rule}</p>
+    <div class="svgbox"><svg viewBox="0 0 ${W} ${H}" width="${W}" role="group" aria-label="이진 트리">
+      ${lines}
+      ${all.map((nd, i) => `<g class="gnode" data-i="${i}" tabindex="0" role="button" aria-label="노드 ${nd.v}"><circle cx="${nd.x}" cy="${nd.y}" r="18"/><text x="${nd.x}" y="${nd.y}">${nd.v}</text><text class="ord" x="${nd.x + 19}" y="${nd.y - 17}"></text></g>`).join("")}
+    </svg></div>
+    <div class="log" id="tlog"></div>`;
+  let idx = 0;
+  const log = () => { $("#tlog").innerHTML = `<span>순회 결과: <b>${order.slice(0, idx).map(o => o.v).join(" ") || "—"}</b></span>`; };
+  const click = el => {
+    if (G.q.done || el.classList.contains("done")) return;
+    const nd = all[+el.dataset.i];
+    if (nd !== order[idx]) { G.q.ex = `${idx + 1}번째는 ${order[idx].v}였습니다. ` + G.q.ex; return resolve(false); }
+    el.classList.add("done"); el.querySelector(".ord").textContent = ++idx; log();
+    if (idx === order.length) resolve(true, { dmg: 2 });
+  };
+  body.querySelectorAll(".gnode").forEach(el => {
+    el.addEventListener("click", () => click(el));
+    el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); click(el); } });
+  });
+  log();
+}
+
+// ---------- Binary search puzzle ----------
+function renderBsearch(body) {
+  const n = [9, 13, 16][DIFF[G.diff].size];
+  const arr = []; let v = rnd(1, 9);
+  for (let i = 0; i < n; i++) { arr.push(v); v += rnd(1, 8); }
+  let target;
+  if (Math.random() < 0.7) target = pick(arr);
+  else { const gaps = arr.slice(0, -1).map((x, i) => [x, arr[i + 1]]).filter(([a, b]) => b - a > 1); target = gaps.length ? pick(gaps)[0] + 1 : arr[n - 1] + 2; }
+  const S = { lo: 0, hi: n - 1, probes: [], steps: [] };
+  G.q.ex = "이진 탐색: <code>mid = (lo + hi) // 2</code>. arr[mid]가 target보다 작으면 <code>lo = mid + 1</code>, 크면 <code>hi = mid - 1</code>. lo가 hi를 넘으면 값이 없으니 -1.";
+  body.innerHTML = `
+    <p class="q">정렬된 배열에서 <code>${target}</code>을(를) 찾습니다. 매 단계 확인할 <b>mid</b> 칸을 클릭하세요.</p>
+    <div class="bs" id="bsc"></div>
+    <div class="row"><button class="btn ghost" id="bsno" hidden>-1 반환 (값이 없음)</button></div>
+    <div class="log" id="bslog"></div>`;
+  const draw = () => {
+    $("#bsc").innerHTML = arr.map((x, i) => {
+      const out = i < S.lo || i > S.hi, mark = i === S.lo && i === S.hi ? "lo·hi" : i === S.lo ? "lo" : i === S.hi ? "hi" : "";
+      const cls = [out ? "out" : "", S.probes.includes(i) ? "probe" : "", S.found === i ? "found" : ""].join(" ");
+      return `<button class="${cls}" data-i="${i}" ${G.q.done ? "disabled" : ""}><em>${S.lo <= S.hi ? mark : ""}</em><b>${x}</b><small>${i}</small></button>`;
+    }).join("");
+    $("#bslog").innerHTML = `<span>범위: <b>lo = ${S.lo}, hi = ${S.hi}</b></span>` + S.steps.map(s => `<span>${s}</span>`).join("");
+    $("#bsno").hidden = S.lo <= S.hi || G.q.done;
+    $("#bsc").querySelectorAll("button").forEach(b => b.onclick = () => choose(+b.dataset.i));
+  };
+  const choose = i => {
+    if (G.q.done) return;
+    if (S.lo > S.hi) { G.q.ex = "lo가 hi보다 커져서 범위가 비었습니다. 이때는 -1을 반환해야 합니다. " + G.q.ex; G.q.answerText = "-1"; return resolve(false); }
+    const mid = Math.floor((S.lo + S.hi) / 2);
+    if (i !== mid) { G.q.answerText = `mid = (${S.lo} + ${S.hi}) // 2 = ${mid}`; G.q.ex = `lo = ${S.lo}, hi = ${S.hi}이므로 다음에 볼 칸은 인덱스 ${mid}입니다. ` + G.q.ex; resolve(false); return draw(); }
+    S.probes.push(mid);
+    if (arr[mid] === target) { S.found = mid; S.steps.push(`mid = <b>${mid}</b>, arr[${mid}] = ${arr[mid]} → 찾았다!`); resolve(true, { dmg: 2 }); return draw(); }
+    if (arr[mid] < target) { S.steps.push(`mid = <b>${mid}</b>, arr[${mid}] = ${arr[mid]} &lt; ${target} → lo = ${mid + 1}`); S.lo = mid + 1; }
+    else { S.steps.push(`mid = <b>${mid}</b>, arr[${mid}] = ${arr[mid]} &gt; ${target} → hi = ${mid - 1}`); S.hi = mid - 1; }
+    draw();
+  };
+  $("#bsno").onclick = () => { if (G.q.done) return; S.steps.push(`lo(${S.lo}) &gt; hi(${S.hi}) → -1 반환`); resolve(true, { dmg: 2 }); draw(); };
+  draw();
+}
+
+// =====================================================================
+// Timer, resolution, end screens
+// =====================================================================
+function startTimer() {
+  stopTimer();
+  let last = performance.now();
+  timerId = setInterval(() => {
+    const now = performance.now(); G.q.left -= (now - last) / 1000; last = now;
+    const f = Math.max(0, G.q.left / G.q.limit);
+    const t = $("#timer"); if (!t) return;
+    $("#tfill").style.width = f * 100 + "%";
+    t.classList.toggle("low", f < 0.3);
+    if (G.q.left <= 0 && !G.q.done) {
+      $("#qbody").querySelectorAll("button, input").forEach(x => x.disabled = true);
+      G.q.timeout = true; resolve(false);
+    }
+  }, 100);
+}
+function stopTimer() { clearInterval(timerId); timerId = null; }
+
+function floatText(txt) {
+  const d = document.createElement("div"); d.className = "dmg"; d.textContent = txt;
+  $("#arena").appendChild(d); setTimeout(() => d.remove(), 900);
+}
+function anim(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+
+function resolve(ok, { dmg = 1, mul = 1, extra = "" } = {}) {
+  if (G.q.done) return;
+  G.q.done = true; stopTimer(); G.tried++;
+  const D = DIFF[G.diff];
+  let gained = 0, crit = false, killed = false, healed = false;
+  if (ok) {
+    G.solved++; G.combo++; G.bestCombo = Math.max(G.bestCombo, G.combo);
+    crit = G.combo >= 3;
+    const hit = dmg + (crit ? 1 : 0);
+    G.mon.hp = Math.max(0, G.mon.hp - hit);
+    const speed = G.q.limit ? Math.max(0, G.q.left / G.q.limit) : 0.6;
+    gained = Math.round((100 * dmg + 60 * speed) * (1 + Math.min(G.combo, 5) * 0.2) * (1 + (G.floor - 1) * 0.1) * D.score * mul);
+    G.score += gained;
+    anim($("#spr"), "hit"); floatText((crit ? "CRIT -" : "-") + hit);
+    if (G.mon.hp === 0) {
+      killed = true; G.kills++;
+      if (G.mode === "endless" && G.mon.boss && G.hp < G.maxHp) { G.hp++; healed = true; }
+    }
+  } else {
+    G.combo = 0; G.hp--;
+    anim($("#app"), "shake");
+  }
+  updateHud();
+  const stageDone = killed && G.mode === "stage" && G.floor === STAGE_FLOORS;
+
+  const fb = document.createElement("div");
+  fb.className = "feedback " + (ok ? "ok" : "no");
+  const head = ok ? (killed ? `${G.mon.n} 처치!` : crit ? "크리티컬!" : "명중!") : (G.q.timeout ? "시간 초과" : "빗나감");
+  const sub = ok ? `+${gained.toLocaleString()}점${healed ? " · 하트 1개 회복" : ""}` : (G.q.answerText ? `정답: <code>${esc(G.q.answerText)}</code>` : "");
+  const nextLabel = G.hp <= 0 ? "결과 보기" : stageDone ? "스테이지 클리어" : killed ? "다음 층으로" : "계속";
+  fb.innerHTML = `<h3>${head}</h3>${sub ? `<p>${sub}</p>` : ""}<p>${G.q.ex}</p>${extra}
+    ${G.q.runnable ? `<div class="row"><button class="btn ghost small" id="tryrun">▶ 직접 실행해 보기</button><span class="status" id="trystatus"></span></div><div id="tryout"></div>` : ""}
+    <div class="row"><button class="btn" id="next">${nextLabel} (Enter)</button></div>`;
+  $("#con").appendChild(fb);
+  if (G.q.runnable) {
+    const src = G.q.runnable;
+    $("#tryrun").onclick = async () => {
+      const b = $("#tryrun"), st = $("#trystatus"); b.disabled = true;
+      st.className = "status"; st.textContent = pyReady ? "실행 중…" : "파이썬 엔진 불러오는 중… (처음 한 번만)";
+      await new Promise(r => setTimeout(r, 30));
+      try {
+        const r = await runPython(src);
+        st.textContent = "실제 실행 결과";
+        $("#tryout").innerHTML = `<pre class="code small">${esc(r.out + (r.err ? r.err : "")) || "(출력 없음)"}</pre>`;
+      } catch (e) { st.className = "status err"; st.textContent = e.message; b.disabled = false; }
+    };
+  }
+  const next = $("#next"); next.focus();
+  next.onclick = () => {
+    if (G.hp <= 0) return gameOver();
+    if (stageDone) return stageClear();
+    if (killed) { G.floor++; return newMonster(); }
+    nextQuestion();
+  };
+}
+
+function statsHtml() {
+  const acc = G.tried ? Math.round(G.solved / G.tried * 100) : 0;
+  return `<div class="stats">
+    <div><b>${G.kills}</b>처치한 몬스터</div>
+    <div><b>${G.solved}/${G.tried}</b>정답</div>
+    <div><b>${acc}%</b>정확도</div>
+    <div><b>x${G.bestCombo}</b>최고 콤보</div></div>`;
+}
+
+function stageClear() {
+  stopTimer();
+  const ratio = G.hp / G.maxHp;
+  const stars = ratio >= 1 ? 3 : ratio >= 0.5 ? 2 : 1;
+  const all = store.get("pd-stars", {}), key = G.stage.id + ":" + G.diff;
+  const prev = all[key] || 0;
+  if (stars > prev) { all[key] = stars; store.set("pd-stars", all); }
+  const idx = STAGES.findIndex(s => s.id === G.stage.id);
+  const nextStage = STAGES[(idx + 1) % STAGES.length];
+  app.innerHTML = `
+    <section class="screen">
+      <h1>${G.stage.name} 돌파<small>${DIFF[G.diff].name} · ${stars > prev ? "새 기록" : `최고 기록 ${prev}★`}</small></h1>
+      ${starsHtml(stars, "bigstars")}
+      <div class="big">${G.score.toLocaleString()}</div>
+      ${statsHtml()}
+      <p class="muted">별: 하트를 하나도 잃지 않으면 ★3, 절반 이상 남기면 ★2.</p>
+      <div class="row"><button class="btn" id="nexts">다음: ${nextStage.name}</button><button class="btn ghost" id="again">다시 도전</button><button class="btn ghost" id="menu">메뉴</button></div>
+    </section>`;
+  const st = G.stage;
+  $("#nexts").onclick = () => startGame({ mode: "stage", stage: nextStage });
+  $("#again").onclick = () => startGame({ mode: "stage", stage: st });
+  $("#menu").onclick = menu;
+  $("#nexts").focus();
+}
+
+function gameOver() {
+  stopTimer();
+  const where = G.mode === "stage" ? `${G.stage.name} ${G.floor}층` : `B${G.floor}F`;
+  let note = "";
+  if (G.mode === "endless") {
+    const key = "pd-best-" + G.diff, prev = store.get(key, 0);
+    if (G.score > prev) { store.set(key, G.score); note = "새 최고 기록입니다."; } else note = `${DIFF[G.diff].name} 최고 기록 ${prev.toLocaleString()}점`;
+  } else note = "보스까지 가려면 남은 하트를 아끼세요.";
+  const cfg = G.mode === "stage" ? { mode: "stage", stage: G.stage } : { mode: "endless", types: G.types };
+  app.innerHTML = `
+    <section class="screen">
+      <h1>${where}에서 쓰러졌다<small>${note}</small></h1>
+      <div class="big">${G.score.toLocaleString()}</div>
+      ${statsHtml()}
+      <div class="row"><button class="btn" id="again">다시 도전</button><button class="btn ghost" id="menu">메뉴</button></div>
+    </section>`;
+  $("#again").onclick = () => startGame(cfg);
+  $("#menu").onclick = menu;
+  $("#again").focus();
+}
+
+document.addEventListener("keydown", e => {
+  if (!G || !G.q) return;
+  if (e.target.matches("input, textarea") && !G.q.done) return;
+  if (e.key === "Enter" && G.q.done) {
+    const n = $("#next");
+    if (n && document.activeElement !== n && !(document.activeElement && document.activeElement.id === "tryrun")) { e.preventDefault(); n.click(); }
+    return;
+  }
+  if (!G.q.done && G.q.keys) G.q.keys(e);
+});
+
+menu();
+</script>
+</body>
+</html>
